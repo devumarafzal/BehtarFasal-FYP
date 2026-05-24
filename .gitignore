@@ -1,0 +1,6 @@
+# Root-level ignores. Project-specific ignores live in each subproject.
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.venv/
