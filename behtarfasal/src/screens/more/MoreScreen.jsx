@@ -32,7 +32,7 @@ const MoreScreen = ({ navigation }) => {
       title: 'Fertilizer Suggestion',
       subtitle: 'Smart nutrient guidance',
       icon: 'flask',
-      onPress: () => handleComingSoon('Fertilizer Suggestion'),
+      onPress: () => navigation.navigate('Fertilizer'),
     },
     {
       key: 'disease',

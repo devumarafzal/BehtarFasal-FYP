@@ -1,3 +1,3 @@
-from . import crop, health
+from . import crop, fertilizer, health
 
-__all__ = ["crop", "health"]
+__all__ = ["crop", "fertilizer", "health"]

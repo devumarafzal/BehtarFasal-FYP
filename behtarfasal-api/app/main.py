@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import crop, health
+from app.routes import crop, fertilizer, health
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +25,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(crop.router)
+app.include_router(fertilizer.router)
 
 
 @app.get("/")

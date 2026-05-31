@@ -14,6 +14,7 @@ import ChatbotScreen from '../screens/chat/ChatbotScreen';
 import CropRecommendScreen from '../screens/crop/CropRecommendScreen';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import DiseaseDetectScreen from '../screens/disease/DiseaseDetectScreen';
+import FertilizerScreen from '../screens/fertilizer/FertilizerScreen';
 import AddFarmScreen from '../screens/farm/AddFarmScreen';
 import FarmDetailScreen from '../screens/farm/FarmDetailScreen';
 import FarmListScreen from '../screens/farm/FarmListScreen';
@@ -133,6 +134,11 @@ const MainStackNavigator = ({ hasFarmProfile }) => {
         name="DiseaseDetect"
         component={DiseaseDetectScreen}
         options={{ title: 'Disease Detection' }}
+      />
+      <MainStack.Screen
+        name="Fertilizer"
+        component={FertilizerScreen}
+        options={{ title: 'Fertilizer Suggestion' }}
       />
       <MainStack.Screen name="AddFarm" component={AddFarmScreen} options={{ title: 'Farm Setup' }} />
       <MainStack.Screen name="FarmDetail" component={FarmDetailScreen} options={{ title: 'Farm Details' }} />
