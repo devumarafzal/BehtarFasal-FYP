@@ -1,6 +1,4 @@
-import { useFocusEffect } from '@react-navigation/native';
-import * as Location from 'expo-location';
-import { useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useContext } from 'react';
 import {
     ActivityIndicator,
     Pressable,
@@ -13,46 +11,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import WeatherCard from '../../components/WeatherCard';
 import { theme } from '../../constants/theme';
 import { auth } from '../../firebase/config';
-import { getFarms, getUserProfile } from '../../firebase/firestore';
-import { getCurrentWeather, getCurrentWeatherByCoords } from '../../services/weatherService';
+import { getFarms, getUserProfile, getAllCalendarPlans } from '../../firebase/firestore';
+import { WeatherContext } from '../../contexts/WeatherContext';
 
 const DashboardScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [userName, setUserName] = useState('Farmer');
   const [totalFarms, setTotalFarms] = useState(0);
+  const [activeCrops, setActiveCrops] = useState(0);
   const [recentFarms, setRecentFarms] = useState([]);
-  const [weather, setWeather] = useState(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
 
-  const loadWeather = useCallback(async () => {
-    setWeatherLoading(true);
-
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-
-      if (permission.status === 'granted') {
-        const location = await Location.getCurrentPositionAsync({});
-        const weatherData = await getCurrentWeatherByCoords(
-          location.coords.latitude,
-          location.coords.longitude
-        );
-        setWeather(weatherData);
-      } else {
-        const weatherData = await getCurrentWeather('Lahore');
-        setWeather(weatherData);
-      }
-    } catch (_err) {
-      try {
-        const weatherData = await getCurrentWeather('Lahore');
-        setWeather(weatherData);
-      } catch (fallbackError) {
-        setError(fallbackError.message || 'Unable to load weather info.');
-      }
-    } finally {
-      setWeatherLoading(false);
-    }
-  }, []);
+  const { weather, weatherLoading } = useContext(WeatherContext);
 
   const loadDashboard = useCallback(async () => {
     const userId = auth.currentUser?.uid;
@@ -66,25 +36,28 @@ const DashboardScreen = ({ navigation }) => {
     setError('');
 
     try {
-      const [profile, farms] = await Promise.all([getUserProfile(userId), getFarms(userId)]);
+      const [profile, farms, calendarPlans] = await Promise.all([
+        getUserProfile(userId), 
+        getFarms(userId),
+        getAllCalendarPlans(userId)
+      ]);
 
       setUserName(profile?.name || auth.currentUser?.displayName || 'Farmer');
       setTotalFarms(farms.length);
       setRecentFarms(farms.slice(0, 3));
 
-      await loadWeather();
+      // Calculate active crops (number of saved calendars in all farms)
+      setActiveCrops(calendarPlans.length);
     } catch (err) {
       setError(err.message || 'Failed to load dashboard data.');
     } finally {
       setLoading(false);
     }
-  }, [loadWeather]);
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadDashboard();
-    }, [loadDashboard])
-  );
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
@@ -107,7 +80,7 @@ const DashboardScreen = ({ navigation }) => {
 
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Active Crops</Text>
-                <Text style={styles.summaryValue}>--</Text>
+                <Text style={styles.summaryValue}>{activeCrops}</Text>
               </View>
             </View>
 

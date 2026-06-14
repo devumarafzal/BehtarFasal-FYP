@@ -351,6 +351,25 @@ export const getCalendarPlansByFarm = async (userId, farmId) => {
   }
 };
 
+export const getAllCalendarPlans = async (userId) => {
+  try {
+    requireUserId(userId);
+
+    const plansQuery = query(
+      getCalendarPlansCollectionRef(userId),
+      orderBy('updatedAt', 'desc')
+    );
+    const snapshot = await getDocs(plansQuery);
+
+    return snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }));
+  } catch (error) {
+    throw new Error(getFirestoreErrorMessage(error, 'Failed to fetch all saved calendars'));
+  }
+};
+
 export const updateCalendarPlanTasks = async (userId, farmId, selectedCrop, tasks) => {
   try {
     requireUserId(userId);

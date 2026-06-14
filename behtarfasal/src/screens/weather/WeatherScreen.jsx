@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useContext } from 'react';
 import * as Location from 'expo-location';
 import {
     ActivityIndicator,
@@ -16,12 +16,9 @@ import WeatherCard from '../../components/WeatherCard';
 import { theme } from '../../constants/theme';
 import {
     buildDailyForecast,
-    getCurrentWeather,
-  getCurrentWeatherByCoords,
     getFarmingTipFromWeather,
-    getFiveDayForecast,
-  getFiveDayForecastByCoords,
 } from '../../services/weatherService';
+import { WeatherContext } from '../../contexts/WeatherContext';
 
 const CITY_ALLOWED_INPUT = /^[A-Za-z\s'.-]*$/;
 const CITY_PATTERN = /^[A-Za-z][A-Za-z\s'.-]{1,59}$/;
@@ -50,10 +47,23 @@ const formatDayName = (unixTimestamp) => {
 
 const WeatherScreen = () => {
   const [city, setCity] = useState('');
-  const [weather, setWeather] = useState(null);
-  const [forecast, setForecast] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [localLoading, setLocalLoading] = useState(false);
+  
+  const { 
+    weather, 
+    forecast, 
+    weatherLoading, 
+    currentCity,
+    fetchWeatherByCity 
+  } = useContext(WeatherContext);
+
+  // Initialize city from context when weather is loaded
+  useEffect(() => {
+    if (currentCity && !city) {
+      setCity(currentCity);
+    }
+  }, [currentCity, city]);
 
   const updateCity = (value) => {
     if (!CITY_ALLOWED_INPUT.test(value)) {
@@ -66,97 +76,22 @@ const WeatherScreen = () => {
     }
   };
 
-  const applyWeatherData = useCallback((weatherData, forecastData) => {
-    setWeather(weatherData);
-    setForecast(buildDailyForecast(forecastData));
-    if (weatherData?.name) {
-      setCity(weatherData.name);
-    }
-  }, []);
-
-  const fetchWeather = useCallback(async (targetCity, options = {}) => {
-    const cityToSearch = (targetCity || '').trim();
-    const shouldSetLoading = !options.skipLoading;
-
-    if (!cityToSearch) {
-      setError('Please enter a city name.');
-      return;
-    }
-
-    if (!CITY_PATTERN.test(cityToSearch)) {
+  const handleSearch = async () => {
+    if (!CITY_PATTERN.test(city)) {
       setError('City name must be 2-60 characters and contain valid letters only.');
       return;
     }
 
-    if (shouldSetLoading) {
-      setLoading(true);
-    }
-    setError('');
-
+    setLocalLoading(true);
     try {
-      const [weatherData, forecastData] = await Promise.all([
-        getCurrentWeather(cityToSearch),
-        getFiveDayForecast(cityToSearch),
-      ]);
-      applyWeatherData(weatherData, forecastData);
+      await fetchWeatherByCity(city);
+      setError('');
     } catch (err) {
       setError(err.message || 'Unable to fetch weather data.');
-      setWeather(null);
-      setForecast([]);
     } finally {
-      if (shouldSetLoading) {
-        setLoading(false);
-      }
+      setLocalLoading(false);
     }
-  }, [applyWeatherData]);
-
-  const fetchWeatherByCoords = useCallback(
-    async (latitude, longitude) => {
-      const [weatherData, forecastData] = await Promise.all([
-        getCurrentWeatherByCoords(latitude, longitude),
-        getFiveDayForecastByCoords(latitude, longitude),
-      ]);
-      applyWeatherData(weatherData, forecastData);
-    },
-    [applyWeatherData]
-  );
-
-  useEffect(() => {
-    const loadDefaultWeather = async () => {
-      setLoading(true);
-      setError('');
-
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-
-        if (permission.status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({});
-          await fetchWeatherByCoords(location.coords.latitude, location.coords.longitude);
-          return;
-        }
-
-        await fetchWeather('Lahore', { skipLoading: true });
-      } catch (err) {
-        try {
-          await fetchWeather('Lahore', { skipLoading: true });
-        } catch (fallbackError) {
-          setError(fallbackError.message || 'Unable to fetch weather data.');
-          setWeather(null);
-          setForecast([]);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDefaultWeather();
-  }, [fetchWeather, fetchWeatherByCoords]);
-
-  const farmingTip = getFarmingTipFromWeather(
-    weather?.weather?.[0]?.main,
-    weather?.main?.humidity,
-    weather?.main?.temp
-  );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
@@ -174,24 +109,28 @@ const WeatherScreen = () => {
               autoCapitalize="words"
               value={city}
               onChangeText={updateCity}
-              onSubmitEditing={() => fetchWeather(city)}
+              onSubmitEditing={handleSearch}
             />
-            <Pressable style={styles.searchButton} onPress={() => fetchWeather(city)} disabled={loading}>
+            <Pressable 
+              style={styles.searchButton} 
+              onPress={handleSearch} 
+              disabled={weatherLoading || localLoading}
+            >
               <Text style={styles.searchButtonText}>Search</Text>
             </Pressable>
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          {loading ? (
+          {weatherLoading || localLoading ? (
             <View style={styles.loaderWrapper}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
           ) : null}
 
-          {!loading && weather ? <WeatherCard weather={weather} /> : null}
+          {!weatherLoading && !localLoading && weather ? <WeatherCard weather={weather} /> : null}
 
-          {!loading && forecast.length > 0 ? (
+          {!weatherLoading && !localLoading && forecast.length > 0 ? (
             <View style={styles.forecastBlock}>
               <Text style={styles.sectionTitle}>5-Day Forecast</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -208,10 +147,16 @@ const WeatherScreen = () => {
             </View>
           ) : null}
 
-          {!loading && weather ? (
+          {!weatherLoading && !localLoading && weather ? (
             <View style={styles.tipCard}>
               <Text style={styles.tipTitle}>Farming Tip</Text>
-              <Text style={styles.tipText}>{farmingTip}</Text>
+              <Text style={styles.tipText}>
+                {getFarmingTipFromWeather(
+                  weather?.weather?.[0]?.main,
+                  weather?.main?.humidity,
+                  weather?.main?.temp
+                )}
+              </Text>
             </View>
           ) : null}
         </ScrollView>
