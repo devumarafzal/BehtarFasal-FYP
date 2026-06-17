@@ -30,6 +30,51 @@ const CROP_TYPES = [
 ];
 
 const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
+const NUMERIC_FIELDS = ['temperature', 'humidity', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
+const FIELD_RULES = {
+  temperature: {
+    label: 'Temperature',
+    min: 0,
+    max: 60,
+    suffix: 'C',
+    helper: 'Enter 0 to 60 C.',
+  },
+  humidity: {
+    label: 'Humidity',
+    min: 0,
+    max: 100,
+    suffix: '%',
+    helper: 'Enter 0 to 100%.',
+  },
+  moisture: {
+    label: 'Moisture',
+    min: 0,
+    max: 100,
+    suffix: '%',
+    helper: 'Enter 0 to 100%.',
+  },
+  nitrogen: {
+    label: 'Nitrogen',
+    min: 0,
+    max: 300,
+    suffix: 'N',
+    helper: 'Enter 0 to 300.',
+  },
+  phosphorus: {
+    label: 'Phosphorus',
+    min: 0,
+    max: 300,
+    suffix: 'P',
+    helper: 'Enter 0 to 300.',
+  },
+  potassium: {
+    label: 'Potassium',
+    min: 0,
+    max: 300,
+    suffix: 'K',
+    helper: 'Enter 0 to 300.',
+  },
+};
 
 const INITIAL_FORM = {
   soilType: '',
@@ -46,51 +91,54 @@ const FertilizerScreen = () => {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [result, setResult] = useState(null);
 
   const updateField = (key, value) => {
-    if (
-      ['temperature', 'humidity', 'moisture', 'nitrogen', 'phosphorus', 'potassium'].includes(
-        key
-      ) &&
-      !NUMERIC_INPUT_PATTERN.test(value)
-    ) {
+    if (NUMERIC_FIELDS.includes(key) && !NUMERIC_INPUT_PATTERN.test(value)) {
       return;
     }
 
     setFormData((prev) => ({ ...prev, [key]: value }));
+    setFieldErrors((prev) => ({ ...prev, [key]: '' }));
     if (error) {
       setError('');
     }
   };
 
   const validateForm = () => {
+    const nextFieldErrors = {};
+
     if (!formData.soilType || !formData.cropType) {
-      return 'Please select soil type and crop type.';
+      if (!formData.soilType) {
+        nextFieldErrors.soilType = 'Select a soil type.';
+      }
+      if (!formData.cropType) {
+        nextFieldErrors.cropType = 'Select a crop type.';
+      }
     }
 
-    const fields = [
-      { key: 'temperature', label: 'Temperature' },
-      { key: 'humidity', label: 'Humidity' },
-      { key: 'moisture', label: 'Moisture' },
-      { key: 'nitrogen', label: 'Nitrogen' },
-      { key: 'phosphorus', label: 'Phosphorus' },
-      { key: 'potassium', label: 'Potassium' },
-    ];
-
-    for (const field of fields) {
-      const raw = String(formData[field.key] ?? '').trim();
+    for (const key of NUMERIC_FIELDS) {
+      const rule = FIELD_RULES[key];
+      const raw = String(formData[key] ?? '').trim();
       if (!raw) {
-        return `${field.label} is required.`;
+        nextFieldErrors[key] = `${rule.label} is required.`;
+        continue;
       }
 
       const numeric = Number(raw);
       if (!Number.isFinite(numeric)) {
-        return `${field.label} must be a valid number.`;
+        nextFieldErrors[key] = `${rule.label} must be a valid number.`;
+        continue;
+      }
+
+      if (numeric < rule.min || numeric > rule.max) {
+        nextFieldErrors[key] = `${rule.label} must be between ${rule.min} and ${rule.max}${rule.suffix ? ` ${rule.suffix}` : ''}.`;
       }
     }
 
-    return '';
+    setFieldErrors(nextFieldErrors);
+    return Object.keys(nextFieldErrors).length ? 'Please fix the highlighted fields.' : '';
   };
 
   const handleRecommend = async () => {
@@ -139,6 +187,7 @@ const FertilizerScreen = () => {
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Soil Type</Text>
+            {fieldErrors.soilType ? <Text style={styles.fieldErrorText}>{fieldErrors.soilType}</Text> : null}
             <View style={styles.chipRow}>
               {SOIL_TYPES.map((soil) => {
                 const selected = formData.soilType === soil;
@@ -157,6 +206,7 @@ const FertilizerScreen = () => {
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Crop Type</Text>
+            {fieldErrors.cropType ? <Text style={styles.fieldErrorText}>{fieldErrors.cropType}</Text> : null}
             <View style={styles.chipRow}>
               {CROP_TYPES.map((crop) => {
                 const selected = formData.cropType === crop;
@@ -176,77 +226,30 @@ const FertilizerScreen = () => {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Field Conditions</Text>
 
-            <View style={styles.fieldBlock}>
-              <Text style={styles.label}>Temperature (C)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 26"
-                placeholderTextColor={theme.colors.textSecondary}
-                keyboardType="decimal-pad"
-                value={formData.temperature}
-                onChangeText={(value) => updateField('temperature', value)}
-              />
-            </View>
+            {NUMERIC_FIELDS.map((key) => {
+              const rule = FIELD_RULES[key];
+              const hasError = Boolean(fieldErrors[key]);
 
-            <View style={styles.fieldBlock}>
-              <Text style={styles.label}>Humidity (%)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 65"
-                placeholderTextColor={theme.colors.textSecondary}
-                keyboardType="decimal-pad"
-                value={formData.humidity}
-                onChangeText={(value) => updateField('humidity', value)}
-              />
-            </View>
-
-            <View style={styles.fieldBlock}>
-              <Text style={styles.label}>Moisture (%)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 40"
-                placeholderTextColor={theme.colors.textSecondary}
-                keyboardType="decimal-pad"
-                value={formData.moisture}
-                onChangeText={(value) => updateField('moisture', value)}
-              />
-            </View>
-
-            <View style={styles.fieldBlock}>
-              <Text style={styles.label}>Nitrogen (N)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 90"
-                placeholderTextColor={theme.colors.textSecondary}
-                keyboardType="decimal-pad"
-                value={formData.nitrogen}
-                onChangeText={(value) => updateField('nitrogen', value)}
-              />
-            </View>
-
-            <View style={styles.fieldBlock}>
-              <Text style={styles.label}>Phosphorus (P)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 45"
-                placeholderTextColor={theme.colors.textSecondary}
-                keyboardType="decimal-pad"
-                value={formData.phosphorus}
-                onChangeText={(value) => updateField('phosphorus', value)}
-              />
-            </View>
-
-            <View style={styles.fieldBlock}>
-              <Text style={styles.label}>Potassium (K)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 60"
-                placeholderTextColor={theme.colors.textSecondary}
-                keyboardType="decimal-pad"
-                value={formData.potassium}
-                onChangeText={(value) => updateField('potassium', value)}
-              />
-            </View>
+              return (
+                <View key={key} style={styles.fieldBlock}>
+                  <Text style={styles.label}>
+                    {rule.label} ({rule.suffix})
+                  </Text>
+                  <TextInput
+                    style={[styles.input, hasError && styles.inputError]}
+                    placeholder={key === 'temperature' ? 'e.g., 26' : key === 'humidity' ? 'e.g., 65' : key === 'moisture' ? 'e.g., 40' : key === 'nitrogen' ? 'e.g., 90' : key === 'phosphorus' ? 'e.g., 45' : 'e.g., 60'}
+                    placeholderTextColor={theme.colors.textSecondary}
+                    keyboardType="decimal-pad"
+                    value={formData[key]}
+                    onChangeText={(value) => updateField(key, value)}
+                    maxLength={6}
+                  />
+                  <Text style={[styles.helperText, hasError && styles.fieldErrorText]}>
+                    {fieldErrors[key] || rule.helper}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
 
           <Pressable
@@ -375,6 +378,19 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     color: theme.colors.text,
     fontSize: theme.fontSize.md,
+  },
+  inputError: {
+    borderColor: theme.colors.error,
+  },
+  helperText: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.xs,
+    marginTop: theme.spacing.xs,
+  },
+  fieldErrorText: {
+    color: theme.colors.error,
+    fontSize: theme.fontSize.xs,
+    marginBottom: theme.spacing.xs,
   },
   primaryButton: {
     backgroundColor: theme.colors.primary,

@@ -139,7 +139,7 @@ const CropRecommendScreen = ({ route, navigation }) => {
             }
             weatherApplied = true;
             break;
-          } catch (weatherErr) {
+          } catch (_weatherErr) {
             // Try next location candidate.
           }
         }

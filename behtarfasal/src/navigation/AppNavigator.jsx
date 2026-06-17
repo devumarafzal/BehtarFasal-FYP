@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
 import { theme } from "../constants/theme";
 import { subscribeToAuthChanges } from "../firebase/auth";
 import { getFarms } from "../firebase/firestore";
@@ -20,6 +20,7 @@ import FarmDetailScreen from "../screens/farm/FarmDetailScreen";
 import FarmListScreen from "../screens/farm/FarmListScreen";
 import MoreScreen from "../screens/more/MoreScreen";
 import ProfileScreen from "../screens/profile/ProfileScreen";
+import SplashScreen from "../screens/splash/SplashScreen";
 import WeatherScreen from "../screens/weather/WeatherScreen";
 
 const RootStack = createStackNavigator();
@@ -32,8 +33,7 @@ const AuthStackNavigator = () => {
     <AuthStack.Navigator
       initialRouteName="Login"
       screenOptions={{
-        headerStyle: { backgroundColor: theme.colors.surface },
-        headerTintColor: theme.colors.text,
+        headerShown: false,
       }}
     >
       <AuthStack.Screen
@@ -58,19 +58,32 @@ const MainTabsNavigator = () => {
         tabBarHideOnKeyboard: true,
         headerTitleAlign: "left",
         headerStyle: {
-          backgroundColor: theme.colors.surface,
+          backgroundColor: theme.colors.headerGreen,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 6,
+          borderBottomWidth: 3,
+          borderBottomColor: theme.colors.accentGreen,
         },
         headerTitleStyle: {
-          color: theme.colors.text,
-          fontSize: theme.fontSize.xl,
-          fontWeight: "700",
+          color: theme.colors.headerText,
+          fontSize: theme.fontSize.xxl,
+          fontWeight: "800",
+          letterSpacing: 0.8,
         },
-        headerTintColor: theme.colors.text,
+        headerTintColor: theme.colors.headerText,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textSecondary,
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 3,
         },
         tabBarIcon: ({ color, size }) => {
           let iconName = "ellipse";
@@ -104,7 +117,7 @@ const MainTabsNavigator = () => {
               <Ionicons
                 name="person-circle"
                 size={26}
-                color={theme.colors.primary}
+                color={theme.colors.headerText}
               />
             </Pressable>
           ),
@@ -123,7 +136,7 @@ const MainTabsNavigator = () => {
               <Ionicons
                 name="add-circle"
                 size={26}
-                color={theme.colors.primary}
+                color={theme.colors.headerText}
               />
             </Pressable>
           ),
@@ -154,8 +167,23 @@ const MainStackNavigator = ({ hasFarmProfile }) => {
       key={hasFarmProfile ? "profile-complete" : "profile-incomplete"}
       initialRouteName={hasFarmProfile ? "MainTabs" : "AddFarm"}
       screenOptions={{
-        headerStyle: { backgroundColor: theme.colors.surface },
-        headerTintColor: theme.colors.text,
+        headerStyle: {
+          backgroundColor: theme.colors.headerGreen,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 6,
+          borderBottomWidth: 3,
+          borderBottomColor: theme.colors.accentGreen,
+        },
+        headerTintColor: theme.colors.headerText,
+        headerTitleStyle: {
+          color: theme.colors.headerText,
+          fontWeight: "700",
+          letterSpacing: 0.5,
+          fontSize: theme.fontSize.lg,
+        },
       }}
     >
       <MainStack.Screen
@@ -204,17 +232,16 @@ const MainStackNavigator = ({ hasFarmProfile }) => {
 
 const AppNavigator = () => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [hasFarmProfile, setHasFarmProfile] = useState(true);
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges(async (currentUser) => {
-      setLoading(true);
       setUser(currentUser);
 
       if (!currentUser) {
         setHasFarmProfile(true);
-        setLoading(false);
+        setIsInitialLoad(false);
         return;
       }
 
@@ -224,19 +251,15 @@ const AppNavigator = () => {
       } catch (_error) {
         setHasFarmProfile(true);
       } finally {
-        setLoading(false);
+        setIsInitialLoad(false);
       }
     });
 
     return unsubscribe;
   }, []);
 
-  if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
-    );
+  if (isInitialLoad) {
+    return <SplashScreen />;
   }
 
   return (
@@ -255,12 +278,6 @@ const AppNavigator = () => {
 };
 
 const styles = StyleSheet.create({
-  loaderContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.colors.background,
-  },
   headerButton: {
     marginRight: theme.spacing.sm,
   },

@@ -1,16 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 
 const MoreScreen = ({ navigation }) => {
   const [loading] = useState(false);
   const [error] = useState('');
-
-  const handleComingSoon = (feature) => {
-    Alert.alert('Coming soon', `${feature} will be available soon.`);
-  };
 
   const items = [
     {

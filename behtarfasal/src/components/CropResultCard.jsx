@@ -31,7 +31,6 @@ const CropResultCard = ({ result, selectedCrop, onSelectCrop }) => {
   }
 
   const cropName = result.crop_name || result.crop || 'No recommendation';
-  const confidence = result.confidence ?? result.confidence_percentage ?? 0;
   const explanation = result.reason || result.explanation || 'No explanation provided.';
   const plantingTime = result.best_planting_time || result.planting_time || 'Not specified';
   const expectedYield = result.expected_yield || 'Not specified';
@@ -85,15 +84,23 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     padding: theme.spacing.md,
     marginTop: theme.spacing.md,
+    elevation: 3,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   heading: {
     fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.xs,
+    color: theme.colors.headerGreen,
+    marginBottom: theme.spacing.sm,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   recommendationRow: {
     marginTop: theme.spacing.xs,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.md,
     paddingHorizontal: theme.spacing.md,
@@ -104,23 +111,25 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   recommendationRowSelected: {
-    borderColor: theme.colors.primary,
-    backgroundColor: '#EAF7EA',
+    borderColor: theme.colors.accentGreen,
+    backgroundColor: '#E8F5E9',
+    borderWidth: 2,
   },
   rankText: {
-    color: theme.colors.textSecondary,
+    color: theme.colors.accentGreen,
     fontSize: theme.fontSize.xs,
     fontWeight: '700',
   },
   recommendationCrop: {
-    color: theme.colors.text,
+    color: theme.colors.headerGreen,
     fontSize: theme.fontSize.lg,
     fontWeight: '700',
     marginTop: theme.spacing.xs,
     textTransform: 'capitalize',
+    letterSpacing: 0.2,
   },
   recommendationConfidence: {
-    color: theme.colors.primary,
+    color: theme.colors.accentGreen,
     fontSize: theme.fontSize.md,
     fontWeight: '700',
   },
@@ -129,11 +138,15 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.sm,
+    fontWeight: '500',
   },
   label: {
     fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
+    color: theme.colors.headerGreen,
     marginTop: theme.spacing.sm,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   value: {
     fontSize: theme.fontSize.md,

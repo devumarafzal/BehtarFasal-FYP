@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useContext } from 'react';
+import { useEffect, useState, useContext } from 'react';
 import * as Location from 'expo-location';
 import {
     ActivityIndicator,
@@ -15,8 +15,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import WeatherCard from '../../components/WeatherCard';
 import { theme } from '../../constants/theme';
 import {
-    buildDailyForecast,
     getFarmingTipFromWeather,
+    getCurrentWeather,
+    getCurrentWeatherByCoords,
+    getFiveDayForecast,
+    getFiveDayForecastByCoords,
+    buildDailyForecast,
 } from '../../services/weatherService';
 import { WeatherContext } from '../../contexts/WeatherContext';
 
@@ -47,23 +51,11 @@ const formatDayName = (unixTimestamp) => {
 
 const WeatherScreen = () => {
   const [city, setCity] = useState('');
-  const [error, setError] = useState('');
-  const [localLoading, setLocalLoading] = useState(false);
-  
-  const { 
-    weather, 
-    forecast, 
-    weatherLoading, 
-    currentCity,
-    fetchWeatherByCity 
-  } = useContext(WeatherContext);
-
-  // Initialize city from context when weather is loaded
-  useEffect(() => {
-    if (currentCity && !city) {
-      setCity(currentCity);
-    }
-  }, [currentCity, city]);
+  const [validationError, setValidationError] = useState('');
+  const [weather, setWeather] = useState(null);
+  const [forecast, setForecast] = useState([]);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState('');
 
   const updateCity = (value) => {
     if (!CITY_ALLOWED_INPUT.test(value)) {
@@ -71,26 +63,102 @@ const WeatherScreen = () => {
     }
 
     setCity(value);
-    if (error) {
-      setError('');
+    if (validationError) {
+      setValidationError('');
     }
   };
 
-  const handleSearch = async () => {
-    if (!CITY_PATTERN.test(city)) {
-      setError('City name must be 2-60 characters and contain valid letters only.');
+  const applyWeatherData = (weatherData, forecastData) => {
+    setWeather(weatherData);
+    if (forecastData) {
+      setForecast(buildDailyForecast(forecastData));
+    }
+    if (weatherData?.name) {
+      setCity(weatherData.name);
+    }
+  };
+
+  const fetchWeatherByCity = async (cityToSearch) => {
+    if (!cityToSearch?.trim()) {
+      setWeatherError('Please enter a city name.');
       return;
     }
 
-    setLocalLoading(true);
+    setWeatherLoading(true);
+    setWeatherError('');
+
     try {
-      await fetchWeatherByCity(city);
-      setError('');
+      const [weatherData, forecastData] = await Promise.all([
+        getCurrentWeather(cityToSearch),
+        getFiveDayForecast(cityToSearch),
+      ]);
+      applyWeatherData(weatherData, forecastData);
     } catch (err) {
-      setError(err.message || 'Unable to fetch weather data.');
+      setWeatherError(err.message || 'Unable to fetch weather data.');
+      setWeather(null);
+      setForecast([]);
     } finally {
-      setLocalLoading(false);
+      setWeatherLoading(false);
     }
+  };
+
+  const fetchWeatherByCoords = async (latitude, longitude) => {
+    setWeatherLoading(true);
+    setWeatherError('');
+
+    try {
+      const [weatherData, forecastData] = await Promise.all([
+        getCurrentWeatherByCoords(latitude, longitude),
+        getFiveDayForecastByCoords(latitude, longitude),
+      ]);
+      applyWeatherData(weatherData, forecastData);
+    } catch (err) {
+      setWeatherError(err.message || 'Unable to fetch weather data.');
+      setWeather(null);
+      setForecast([]);
+    } finally {
+      setWeatherLoading(false);
+    }
+  };
+
+  // Initialize weather on mount
+  useEffect(() => {
+    const loadInitialWeather = async () => {
+      setWeatherLoading(true);
+      setWeatherError('');
+
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+
+        if (permission.status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({});
+          await fetchWeatherByCoords(location.coords.latitude, location.coords.longitude);
+          return;
+        }
+
+        await fetchWeatherByCity('Lahore');
+      } catch (_err) {
+        try {
+          await fetchWeatherByCity('Lahore');
+        } catch (fallbackError) {
+          setWeatherError(fallbackError.message || 'Unable to load weather info.');
+        }
+      } finally {
+        setWeatherLoading(false);
+      }
+    };
+
+    loadInitialWeather();
+  }, []);
+
+  const handleSearch = () => {
+    if (!CITY_PATTERN.test(city)) {
+      setValidationError('City name must be 2-60 characters and contain valid letters only.');
+      return;
+    }
+
+    setValidationError('');
+    fetchWeatherByCity(city);
   };
 
   return (
@@ -114,23 +182,24 @@ const WeatherScreen = () => {
             <Pressable 
               style={styles.searchButton} 
               onPress={handleSearch} 
-              disabled={weatherLoading || localLoading}
+              disabled={weatherLoading}
             >
               <Text style={styles.searchButtonText}>Search</Text>
             </Pressable>
           </View>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {validationError ? <Text style={styles.errorText}>{validationError}</Text> : null}
+          {weatherError ? <Text style={styles.errorText}>{weatherError}</Text> : null}
 
-          {weatherLoading || localLoading ? (
+          {weatherLoading ? (
             <View style={styles.loaderWrapper}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
           ) : null}
 
-          {!weatherLoading && !localLoading && weather ? <WeatherCard weather={weather} /> : null}
+          {!weatherLoading && weather ? <WeatherCard weather={weather} /> : null}
 
-          {!weatherLoading && !localLoading && forecast.length > 0 ? (
+          {!weatherLoading && forecast.length > 0 ? (
             <View style={styles.forecastBlock}>
               <Text style={styles.sectionTitle}>5-Day Forecast</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -147,7 +216,7 @@ const WeatherScreen = () => {
             </View>
           ) : null}
 
-          {!weatherLoading && !localLoading && weather ? (
+          {!weatherLoading && weather ? (
             <View style={styles.tipCard}>
               <Text style={styles.tipTitle}>Farming Tip</Text>
               <Text style={styles.tipText}>

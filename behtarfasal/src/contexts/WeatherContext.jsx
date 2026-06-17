@@ -75,35 +75,8 @@ export const WeatherProvider = ({ children }) => {
     [applyWeatherData]
   );
 
-  // Fetch weather once on mount
-  useEffect(() => {
-    const loadInitialWeather = async () => {
-      setWeatherLoading(true);
-      setWeatherError('');
-
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-
-        if (permission.status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({});
-          await fetchWeatherByCoords(location.coords.latitude, location.coords.longitude);
-          return;
-        }
-
-        await fetchWeatherByCity('Lahore');
-      } catch (err) {
-        try {
-          await fetchWeatherByCity('Lahore');
-        } catch (fallbackError) {
-          setWeatherError(fallbackError.message || 'Unable to load weather info.');
-        }
-      } finally {
-        setWeatherLoading(false);
-      }
-    };
-
-    loadInitialWeather();
-  }, [fetchWeatherByCity, fetchWeatherByCoords]);
+  // Weather Context is used by Weather Screen for city search functionality
+  // Initial weather loading is handled by individual screens (Dashboard, Weather Screen)
 
   return (
     <WeatherContext.Provider
