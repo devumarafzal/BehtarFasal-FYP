@@ -40,10 +40,14 @@ py -3.11 -m venv venv
 # python -m venv venv
 
 source venv/bin/activate       # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt --index-url https://pypi.org/simple
 
 # Make sure these files exist in app/ml/:
 # model.pkl, standscaler.pkl, minmaxscaler.pkl, crop_map.pkl
+
+# For the real-time chatbot, create behtarfasal-api/.env:
+# GEMINI_API_KEY=your_google_gemini_key
+# GEMINI_MODEL=gemini-2.5-flash
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
@@ -61,11 +65,12 @@ If that still fails on your machine, create the venv with Python 3.11 (`py -3.11
 
 ## Endpoints
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /health | Check API and model status |
-| POST | /crop/recommend | Get crop recommendation |
-| GET | /docs | Swagger UI |
+| Method | Endpoint        | Description                |
+| ------ | --------------- | -------------------------- |
+| GET    | /health         | Check API and model status |
+| POST   | /crop/recommend | Get crop recommendation    |
+| POST   | /chat/          | Ask the real-time Gemini chatbot |
+| GET    | /docs           | Swagger UI                 |
 
 ## Request Examples
 

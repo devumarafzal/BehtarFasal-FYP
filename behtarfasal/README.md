@@ -51,7 +51,7 @@ EXPO_PUBLIC_API_URL=http://localhost:8000
 3. Start the app
 
 ```bash
-npm start
+npx expo start
 ```
 
 ## Scripts
