@@ -22,6 +22,7 @@ import MoreScreen from "../screens/more/MoreScreen";
 import ProfileScreen from "../screens/profile/ProfileScreen";
 import SplashScreen from "../screens/splash/SplashScreen";
 import WeatherScreen from "../screens/weather/WeatherScreen";
+import YieldPredictScreen from "../screens/yield/YieldPredictScreen";
 
 const RootStack = createStackNavigator();
 const AuthStack = createStackNavigator();
@@ -210,6 +211,11 @@ const MainStackNavigator = ({ hasFarmProfile }) => {
         name="Fertilizer"
         component={FertilizerScreen}
         options={{ title: "Fertilizer Suggestion" }}
+      />
+      <MainStack.Screen
+        name="YieldPredict"
+        component={YieldPredictScreen}
+        options={{ title: "Yield Prediction" }}
       />
       <MainStack.Screen
         name="AddFarm"

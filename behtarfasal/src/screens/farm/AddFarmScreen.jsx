@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Linking,
   Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import StepProgressBar from '../../components/StepProgressBar';
@@ -54,6 +55,12 @@ const getRangeError = ({ label, value, min, max }) => {
     return `${label} must be between ${min} and ${max}.`;
   }
   return '';
+};
+
+const openPhoneNumber = (phoneNumber) => {
+  Linking.openURL(`tel:${phoneNumber}`).catch(() => {
+    Alert.alert('Unable to call', `Please dial ${phoneNumber} manually.`);
+  });
 };
 
 
@@ -568,10 +575,52 @@ const AddFarmScreen = ({ navigation, route }) => {
     </Pressable>
   );
 
+  const openNearbyLabSearch = () => {
+    const location = [formData.district, formData.province].filter(Boolean).join(' ');
+    const query = encodeURIComponent(`soil testing laboratory ${location || 'near me'} Pakistan`);
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {
+      Alert.alert('Unable to open link', 'Please search for a nearby soil testing laboratory manually.');
+    });
+  };
+
+  const renderSoilTestHelp = () => (
+    <View style={styles.infoCard}>
+      <Text style={styles.infoTitle}>Soil Test</Text>
+      <Text style={styles.infoText}>Do not have soil data? No worries.</Text>
+
+      <View style={styles.infoOption}>
+        <Text style={styles.infoOptionTitle}>Option 1: Call the Government Helpline</Text>
+        <Text style={styles.infoText}>Free advisory available from 8 AM to 8 PM.</Text>
+        <Pressable style={styles.infoActionButton} onPress={() => openPhoneNumber('080015000')}>
+          <Ionicons name="call" size={16} color={theme.colors.surface} />
+          <Text style={styles.infoActionText}>Call 0800-15000</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.infoOption}>
+        <Text style={styles.infoOptionTitle}>Option 2: Get a Free Test from FFC Farm Advisory</Text>
+        <Pressable style={styles.infoActionButton} onPress={() => openPhoneNumber('080000332')}>
+          <Ionicons name="call" size={16} color={theme.colors.surface} />
+          <Text style={styles.infoActionText}>Call 0800-00332</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.infoOption}>
+        <Text style={styles.infoOptionTitle}>Option 3: Find a Lab in Your District</Text>
+        <Pressable style={styles.infoLinkButton} onPress={openNearbyLabSearch}>
+          <Ionicons name="map" size={16} color={theme.colors.primary} />
+          <Text style={styles.infoLinkText}>View Nearby Labs</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
   const renderStepTwo = () => (
     <View>
       <Text style={styles.sectionTitle}>Soil Health</Text>
       <Text style={styles.sectionSubtitle}>Soil test results</Text>
+
+      {renderSoilTestHelp()}
 
       {renderCheckbox({
         label: 'I have soil test results',
@@ -676,7 +725,7 @@ const AddFarmScreen = ({ navigation, route }) => {
         </View>
       ) : (
         <Text style={styles.hintText}>
-          Soil nutrient fields are hidden. Default values will be used (pH 6.5 and nutrients as 0).
+          Soil nutrient fields are hidden. Default values will be used until you add test results.
         </Text>
       )}
     </View>
@@ -951,6 +1000,67 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: theme.fontSize.sm,
     marginBottom: theme.spacing.sm,
+  },
+  infoCard: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  infoTitle: {
+    color: theme.colors.text,
+    fontSize: theme.fontSize.md,
+    fontWeight: '700',
+    marginBottom: theme.spacing.xs,
+  },
+  infoText: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  infoOption: {
+    marginTop: theme.spacing.sm,
+  },
+  infoOptionTitle: {
+    color: theme.colors.text,
+    fontSize: theme.fontSize.sm,
+    fontWeight: '700',
+    marginBottom: theme.spacing.xs,
+  },
+  infoActionButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  infoActionText: {
+    color: theme.colors.surface,
+    fontSize: theme.fontSize.sm,
+    fontWeight: '700',
+  },
+  infoLinkButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  infoLinkText: {
+    color: theme.colors.primary,
+    fontSize: theme.fontSize.sm,
+    fontWeight: '700',
   },
   errorText: {
     color: theme.colors.error,

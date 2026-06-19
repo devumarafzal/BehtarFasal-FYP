@@ -16,7 +16,11 @@ import { logoutUser } from '../../firebase/auth';
 import { auth } from '../../firebase/config';
 import { createUserProfile, getFarms, getUserProfile, updateUserProfile } from '../../firebase/firestore';
 
-const LANGUAGES = ['english', 'urdu'];
+const LANGUAGES = [
+  { label: 'English', value: 'english' },
+  { label: 'Urdu', value: 'urdu' },
+];
+const LANGUAGE_VALUES = LANGUAGES.map((language) => language.value);
 const NAME_PATTERN = /^[A-Za-z][A-Za-z\s'.-]{1,59}$/;
 const PHONE_PATTERN = /^\+?[0-9\s-]{10,15}$/;
 const PHONE_INPUT_PATTERN = /^[0-9+\-\s]*$/;
@@ -113,7 +117,7 @@ const ProfileScreen = ({ navigation }) => {
       return 'Phone number must be 10-15 digits (you can use +, spaces, or hyphen).';
     }
 
-    if (!LANGUAGES.includes(formData.language)) {
+    if (!LANGUAGE_VALUES.includes(formData.language)) {
       return 'Please select a valid language.';
     }
 
@@ -233,15 +237,15 @@ const ProfileScreen = ({ navigation }) => {
           <Text style={styles.label}>Preferred Language</Text>
           <View style={styles.languageRow}>
             {LANGUAGES.map((language) => {
-              const selected = formData.language === language;
+              const selected = formData.language === language.value;
               return (
                 <Pressable
-                  key={language}
+                  key={language.value}
                   style={[styles.languageChip, selected && styles.languageChipSelected]}
-                  onPress={() => updateField('language', language)}
+                  onPress={() => updateField('language', language.value)}
                 >
                   <Text style={[styles.languageChipText, selected && styles.languageChipTextSelected]}>
-                    {language}
+                    {language.label}
                   </Text>
                 </Pressable>
               );

@@ -31,6 +31,13 @@ const MoreScreen = ({ navigation }) => {
       onPress: () => navigation.navigate('Fertilizer'),
     },
     {
+      key: 'yield',
+      title: 'Yield Prediction',
+      subtitle: 'Estimate farm output',
+      icon: 'analytics',
+      onPress: () => navigation.navigate('YieldPredict'),
+    },
+    {
       key: 'disease',
       title: 'Crop Disease Detection',
       subtitle: 'Identify crop issues',
