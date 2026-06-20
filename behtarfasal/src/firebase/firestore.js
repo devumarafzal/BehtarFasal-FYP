@@ -19,6 +19,9 @@ const getUserRef = (userId) => doc(db, 'users', userId);
 const getFarmsCollectionRef = (userId) => collection(db, 'users', userId, 'farms');
 const getFarmRef = (userId, farmId) => doc(db, 'users', userId, 'farms', farmId);
 const getCalendarPlansCollectionRef = (userId) => collection(db, 'users', userId, 'calendarPlans');
+const getChatSessionsCollectionRef = (userId) => collection(db, 'users', userId, 'chatSessions');
+const getChatSessionRef = (userId, sessionId) =>
+  doc(db, 'users', userId, 'chatSessions', sessionId);
 
 const normalizeCropKey = (selectedCrop) =>
   String(selectedCrop || '')
@@ -57,7 +60,7 @@ const getFirestoreErrorMessage = (error, fallbackMessage) => {
   const errorCode = error?.code || '';
 
   if (errorCode.includes('permission-denied')) {
-    return 'Missing or insufficient permissions. Update Firestore rules to allow authenticated users access to users/{uid} and users/{uid}/farms/{farmId}.';
+    return 'Missing or insufficient permissions. Update Firestore rules to allow authenticated users access to their saved app data.';
   }
 
   if (errorCode.includes('unauthenticated')) {
@@ -75,6 +78,19 @@ const requireUserId = (userId) => {
   if (!userId) {
     throw new Error('User session missing. Please login again.');
   }
+};
+
+const sanitizeChatMessages = (messages) => {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+
+  return messages
+    .map((item) => ({
+      role: item?.role === 'user' ? 'user' : 'ai',
+      content: String(item?.content || '').trim(),
+    }))
+    .filter((item) => item.content);
 };
 
 export const createUserProfile = async (userId, userData) => {
@@ -386,5 +402,98 @@ export const updateCalendarPlanTasks = async (userId, farmId, selectedCrop, task
     });
   } catch (error) {
     throw new Error(getFirestoreErrorMessage(error, 'Failed to update calendar progress'));
+  }
+};
+
+export const getChatSessions = async (userId, maxItems = 20) => {
+  try {
+    requireUserId(userId);
+
+    const sessionsQuery = query(
+      getChatSessionsCollectionRef(userId),
+      orderBy('updatedAt', 'desc'),
+      limit(maxItems)
+    );
+    const snapshot = await getDocs(sessionsQuery);
+
+    return snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }));
+  } catch (error) {
+    throw new Error(getFirestoreErrorMessage(error, 'Failed to fetch chat sessions'));
+  }
+};
+
+export const getChatSession = async (userId, sessionId) => {
+  try {
+    requireUserId(userId);
+
+    const safeSessionId = String(sessionId || '').trim();
+    if (!safeSessionId) {
+      throw new Error('sessionId is required to load a chat session.');
+    }
+
+    const snapshot = await getDoc(getChatSessionRef(userId, safeSessionId));
+    if (!snapshot.exists()) {
+      return null;
+    }
+
+    return {
+      id: snapshot.id,
+      ...snapshot.data(),
+    };
+  } catch (error) {
+    throw new Error(getFirestoreErrorMessage(error, 'Failed to fetch chat session'));
+  }
+};
+
+export const saveChatSession = async (userId, sessionData, sessionId = null) => {
+  try {
+    requireUserId(userId);
+
+    const messages = sanitizeChatMessages(sessionData?.messages);
+    const title = String(sessionData?.title || '').trim() || 'New chat';
+    const lastMessage =
+      [...messages].reverse().find((item) => item.role === 'user') ||
+      messages[messages.length - 1];
+
+    const payload = {
+      title,
+      preview: String(lastMessage?.content || '').slice(0, 160),
+      messages,
+      messageCount: messages.length,
+      updatedAt: serverTimestamp(),
+    };
+
+    const safeSessionId = String(sessionId || '').trim();
+    if (safeSessionId) {
+      await setDoc(getChatSessionRef(userId, safeSessionId), payload, { merge: true });
+      return safeSessionId;
+    }
+
+    const docRef = await addDoc(getChatSessionsCollectionRef(userId), {
+      ...payload,
+      createdAt: serverTimestamp(),
+    });
+
+    return docRef.id;
+  } catch (error) {
+    throw new Error(getFirestoreErrorMessage(error, 'Failed to save chat session'));
+  }
+};
+
+export const deleteChatSession = async (userId, sessionId) => {
+  try {
+    requireUserId(userId);
+
+    const safeSessionId = String(sessionId || '').trim();
+    if (!safeSessionId) {
+      throw new Error('sessionId is required to delete a chat session.');
+    }
+
+    await deleteDoc(getChatSessionRef(userId, safeSessionId));
+  } catch (error) {
+    throw new Error(getFirestoreErrorMessage(error, 'Failed to delete chat session'));
   }
 };

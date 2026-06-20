@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
     userId: Optional[str] = None
     message: str
     location: Optional[Dict[str, float]] = None # {lat: ..., lon: ...}
+    weather: Optional[Dict[str, Any]] = None
     history: List[ChatMessage] = Field(default_factory=list)
 
 class ChatResponse(BaseModel):

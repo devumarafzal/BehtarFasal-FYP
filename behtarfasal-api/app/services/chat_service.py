@@ -164,6 +164,155 @@ def _build_context_text(user_context: Dict[str, Any]) -> str:
     return f"Farmer context: {details}."
 
 
+RAIN_WORDS = ("rain", "drizzle", "thunderstorm", "shower")
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_number(value: Any, suffix: str = "") -> str:
+    numeric_value = _safe_float(value)
+    if numeric_value.is_integer():
+        return f"{int(numeric_value)}{suffix}"
+    return f"{numeric_value:.1f}{suffix}"
+
+
+def _weather_text(entry: Dict[str, Any]) -> str:
+    return f"{entry.get('condition', '')} {entry.get('description', '')}".strip()
+
+
+def _mentions_rain(text: str) -> bool:
+    lower_text = text.lower()
+    return any(word in lower_text for word in RAIN_WORDS)
+
+
+def analyze_weather_payload(weather_data: Dict[str, Any]) -> Dict[str, Any]:
+    if not weather_data:
+        return {"has_data": False}
+
+    current = weather_data.get("current") or {}
+    hourly = weather_data.get("hourly") or []
+    today_key = weather_data.get("todayKey")
+    city = weather_data.get("city") or "aapke ilaqe"
+
+    today_entries = [
+        entry for entry in hourly
+        if not today_key or entry.get("dateKey") == today_key
+    ]
+    if not today_entries:
+        today_entries = hourly[:8]
+
+    current_text = _weather_text(current)
+    current_rain_mm = _safe_float(current.get("rainMm"))
+    current_is_raining = _mentions_rain(current_text) or current_rain_mm > 0
+
+    max_probability = 0.0
+    total_rain_mm = current_rain_mm
+    rain_entries: List[Dict[str, Any]] = []
+
+    for entry in today_entries:
+        probability = _safe_float(entry.get("pop"))
+        if probability > 1:
+            probability = probability / 100
+
+        rain_mm = _safe_float(entry.get("rainMm"))
+        total_rain_mm += rain_mm
+        max_probability = max(max_probability, probability)
+        entry_text = _weather_text(entry)
+        has_rain = _mentions_rain(entry_text) or rain_mm > 0 or probability >= 0.3
+
+        if has_rain:
+            rain_entries.append({
+                "time": entry.get("timeLabel") or entry.get("time") or "",
+                "condition": entry_text or "rain chance",
+                "probability": probability,
+                "rain_mm": rain_mm,
+            })
+
+    rain_expected = current_is_raining or bool(rain_entries)
+    probability_percent = int(round(max_probability * 100))
+    rain_times = [entry["time"] for entry in rain_entries if entry.get("time")][:4]
+
+    if current_is_raining:
+        answer = f"Haan, {city} mein abhi barish report ho rahi hai."
+    elif rain_expected:
+        answer = f"Haan, {city} mein aaj barish ka chance hai."
+    elif probability_percent >= 15:
+        answer = (
+            f"{city} mein aaj barish ka chance low hai "
+            f"(taqreeban {probability_percent}%)."
+        )
+    else:
+        answer = f"Nahi, {city} mein aaj barish expected nahi lag rahi."
+
+    timing = (
+        f"Zyada chance: {', '.join(rain_times)}."
+        if rain_times
+        else "Aaj ke forecast slots mein clear rain timing nahi aa rahi."
+    )
+
+    prompt_note = (
+        f"Live weather data attached for {city}. Direct rain answer: {answer} "
+        f"Current: {current_text or 'not available'}, temp "
+        f"{_format_number(current.get('tempC'), 'C') if current else 'not available'}, "
+        f"humidity {_format_number(current.get('humidity'), '%') if current else 'not available'}. "
+        f"Max rain probability today: {probability_percent}%. "
+        f"Total forecast rain: {_format_number(total_rain_mm, ' mm')}. {timing}"
+    )
+
+    return {
+        "has_data": True,
+        "city": city,
+        "answer": answer,
+        "rain_expected_today": rain_expected,
+        "rain_probability_percent": probability_percent,
+        "rain_times": rain_times,
+        "total_rain_mm": round(total_rain_mm, 1),
+        "current": current,
+        "current_text": current_text,
+        "timing": timing,
+        "prompt_note": prompt_note,
+    }
+
+
+def build_weather_reply(weather_analysis: Dict[str, Any]) -> str:
+    if not weather_analysis.get("has_data"):
+        return ""
+
+    current = weather_analysis.get("current") or {}
+    current_text = weather_analysis.get("current_text") or "not available"
+    probability = weather_analysis.get("rain_probability_percent", 0)
+    rain_expected = weather_analysis.get("rain_expected_today", False)
+
+    if rain_expected:
+        farming_action = (
+            "Spray aur fertilizer application ko barish ke qareeb avoid karein; "
+            "field drainage aur harvested saman cover kar lein."
+        )
+    else:
+        farming_action = (
+            "Normal field work ho sakta hai, lekin irrigation se pehle mitti ki "
+            "nami check kar lein."
+        )
+
+    return (
+        f"{weather_analysis['answer']}\n"
+        f"1. Abhi condition: {current_text}, temp "
+        f"{_format_number(current.get('tempC'), 'C')}, humidity "
+        f"{_format_number(current.get('humidity'), '%')}.\n"
+        f"2. Aaj rain chance: {probability}%. {weather_analysis['timing']}\n"
+        f"3. Expected rain amount: "
+        f"{_format_number(weather_analysis.get('total_rain_mm'), ' mm')}.\n"
+        f"4. Farming action: {farming_action}"
+    )
+
+
 def build_ai_prompt(
     intent: str,
     user_message: str,
@@ -283,12 +432,17 @@ async def process_chat_message(request: ChatRequest) -> ChatResponse:
     user_message = request.message.strip()
     intent = detect_intent(user_message)
     user_context = await mock_fetch_user_context(request.userId)
+    weather_analysis = analyze_weather_payload(request.weather or {})
 
     data: Dict[str, Any] = {}
 
     data_notes = {
         "GENERAL": "Give a direct, useful answer to the farmer's question.",
-        "WEATHER": "No live weather API data is attached. Do not claim a live forecast, but give practical weather-based farming guidance.",
+        "WEATHER": (
+            weather_analysis["prompt_note"]
+            if weather_analysis.get("has_data")
+            else "No live weather API data is attached. Do not claim a live forecast, but give practical weather-based farming guidance."
+        ),
         "IRRIGATION": "No live moisture sensor data is attached. Give practical irrigation timing, field checks, and precautions.",
         "CROP": "If exact soil/weather values are missing, still suggest practical crop-selection criteria and likely options for Pakistan.",
         "FERTILIZER": "If exact NPK or soil values are missing, still give a safe general fertilizer approach and explain what data would improve the dose.",
@@ -296,13 +450,27 @@ async def process_chat_message(request: ChatRequest) -> ChatResponse:
     }
 
     if intent == "WEATHER":
-        data = {"weather_data_available": False}
+        data = {
+            "weather_data_available": weather_analysis.get("has_data", False),
+            "rain_expected_today": weather_analysis.get("rain_expected_today"),
+            "rain_probability_percent": weather_analysis.get("rain_probability_percent"),
+            "city": weather_analysis.get("city"),
+            "rain_times": weather_analysis.get("rain_times", []),
+        }
     elif intent == "CROP":
         data = {"required_fields": ["nitrogen", "phosphorus", "potassium", "temperature", "humidity", "ph", "rainfall"]}
     elif intent == "FERTILIZER":
         data = {"required_fields": ["soil_type", "crop_type", "moisture", "temperature", "humidity", "nitrogen", "phosphorus", "potassium"]}
     elif intent == "DISEASE":
         data = {"image_required": True}
+
+    if intent == "WEATHER" and weather_analysis.get("has_data"):
+        reply = build_weather_reply(weather_analysis)
+        return ChatResponse(
+            reply=reply,
+            intent=intent,
+            data=data,
+        )
 
     prompt = build_ai_prompt(
         intent=intent,
