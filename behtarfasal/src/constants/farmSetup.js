@@ -182,7 +182,7 @@ export const DISTRICTS_BY_PROVINCE = {
   'Islamabad Capital Territory': ['Islamabad'],
 };
 
-export const SOIL_TYPES = ['Sandy', 'Clay', 'Loamy', 'Silty', 'Peaty', 'Chalky', 'Saline'];
+export const SOIL_TYPES = ['Black', 'Clayey', 'Loamy', 'Red', 'Sandy'];
 export const CROPPING_SYSTEMS = [
   'Single Crop',
   'Mixed Farming (Crops + Livestock)',

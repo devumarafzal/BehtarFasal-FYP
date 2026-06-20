@@ -16,11 +16,6 @@ import { logoutUser } from '../../firebase/auth';
 import { auth } from '../../firebase/config';
 import { createUserProfile, getFarms, getUserProfile, updateUserProfile } from '../../firebase/firestore';
 
-const LANGUAGES = [
-  { label: 'English', value: 'english' },
-  { label: 'Urdu', value: 'urdu' },
-];
-const LANGUAGE_VALUES = LANGUAGES.map((language) => language.value);
 const NAME_PATTERN = /^[A-Za-z][A-Za-z\s'.-]{1,59}$/;
 const PHONE_PATTERN = /^\+?[0-9\s-]{10,15}$/;
 const PHONE_INPUT_PATTERN = /^[0-9+\-\s]*$/;
@@ -53,7 +48,6 @@ const ProfileScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    language: 'english',
   });
 
   const loadProfile = useCallback(async () => {
@@ -74,13 +68,11 @@ const ProfileScreen = ({ navigation }) => {
         name: auth.currentUser?.displayName || '',
         email: authEmail,
         phone: '',
-        language: 'english',
       };
 
       setFormData({
         name: source.name || '',
         phone: source.phone || '',
-        language: source.language || 'english',
       });
 
       setProfileMeta({
@@ -115,10 +107,6 @@ const ProfileScreen = ({ navigation }) => {
 
     if (trimmedPhone && !PHONE_PATTERN.test(trimmedPhone)) {
       return 'Phone number must be 10-15 digits (you can use +, spaces, or hyphen).';
-    }
-
-    if (!LANGUAGE_VALUES.includes(formData.language)) {
-      return 'Please select a valid language.';
     }
 
     return '';
@@ -158,7 +146,6 @@ const ProfileScreen = ({ navigation }) => {
         name: formData.name.trim(),
         email: profileMeta.email,
         phone: formData.phone.trim(),
-        language: formData.language,
       };
 
       const existingProfile = await getUserProfile(userId);
@@ -232,24 +219,6 @@ const ProfileScreen = ({ navigation }) => {
               value={formData.phone}
               onChangeText={(value) => updateField('phone', value)}
             />
-          </View>
-
-          <Text style={styles.label}>Preferred Language</Text>
-          <View style={styles.languageRow}>
-            {LANGUAGES.map((language) => {
-              const selected = formData.language === language.value;
-              return (
-                <Pressable
-                  key={language.value}
-                  style={[styles.languageChip, selected && styles.languageChipSelected]}
-                  onPress={() => updateField('language', language.value)}
-                >
-                  <Text style={[styles.languageChipText, selected && styles.languageChipTextSelected]}>
-                    {language.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
           </View>
         </View>
 
@@ -358,32 +327,6 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     color: theme.colors.text,
     fontSize: theme.fontSize.md,
-  },
-  languageRow: {
-    flexDirection: 'row',
-    marginTop: theme.spacing.xs,
-  },
-  languageChip: {
-    borderWidth: 2,
-    borderColor: theme.colors.accentGreen,
-    borderRadius: theme.borderRadius.md,
-    paddingVertical: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.md,
-    marginRight: theme.spacing.sm,
-    backgroundColor: theme.colors.surface,
-  },
-  languageChipSelected: {
-    borderColor: theme.colors.headerGreen,
-    backgroundColor: theme.colors.headerGreen,
-  },
-  languageChipText: {
-    color: theme.colors.text,
-    fontSize: theme.fontSize.sm,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  languageChipTextSelected: {
-    color: theme.colors.headerText,
   },
   errorText: {
     color: theme.colors.error,

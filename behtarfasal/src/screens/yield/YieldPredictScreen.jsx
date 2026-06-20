@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,6 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
+import { auth } from '../../firebase/config';
+import { getFarms } from '../../firebase/firestore';
 import { getYieldOptions, predictYield } from '../../services/yieldService';
 
 const FALLBACK_OPTIONS = {
@@ -55,6 +58,7 @@ const FIELD_RULES = {
 };
 
 const INITIAL_FORM = {
+  farmId: '',
   crop: '',
   soilType: '',
   irrigationType: '',
@@ -65,9 +69,36 @@ const INITIAL_FORM = {
   potassium: '',
 };
 
+const normalizeSoilType = (soilType, availableSoils) => {
+  if (!soilType) {
+    return '';
+  }
+
+  const directMatch = availableSoils.find((soil) => soil.toLowerCase() === String(soilType).toLowerCase());
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const aliases = {
+    clay: 'Clayey',
+    clayey: 'Clayey',
+    black: 'Black',
+    loamy: 'Loamy',
+    red: 'Red',
+    sandy: 'Sandy',
+  };
+  const mapped = aliases[String(soilType).trim().toLowerCase()];
+  return availableSoils.includes(mapped) ? mapped : '';
+};
+
+const formatFarmValue = (value) => (value === null || value === undefined ? '' : String(value));
+
 const YieldPredictScreen = () => {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [options, setOptions] = useState(FALLBACK_OPTIONS);
+  const [farms, setFarms] = useState([]);
+  const [farmsLoading, setFarmsLoading] = useState(false);
+  const [farmDropdownOpen, setFarmDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
@@ -105,6 +136,31 @@ const YieldPredictScreen = () => {
     };
   }, []);
 
+  const loadFarms = useCallback(async () => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      setFarms([]);
+      return;
+    }
+
+    setFarmsLoading(true);
+    try {
+      const farmList = await getFarms(userId);
+      setFarms(farmList);
+    } catch (err) {
+      setError(err.message || 'Unable to load farms.');
+      setFarms([]);
+    } finally {
+      setFarmsLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadFarms();
+    }, [loadFarms])
+  );
+
   const updateField = (key, value) => {
     if (NUMERIC_FIELDS.includes(key) && !NUMERIC_INPUT_PATTERN.test(value)) {
       return;
@@ -112,6 +168,37 @@ const YieldPredictScreen = () => {
 
     setFormData((prev) => ({ ...prev, [key]: value }));
     setFieldErrors((prev) => ({ ...prev, [key]: '' }));
+    if (error) {
+      setError('');
+    }
+  };
+
+  const handleSelectFarm = (farm) => {
+    const irrigationMatch = Array.isArray(farm.irrigationFacilities)
+      ? farm.irrigationFacilities.find((item) => options.irrigation_types.includes(item))
+      : '';
+
+    setFormData((prev) => ({
+      ...prev,
+      farmId: farm.id,
+      farmSizeAcres: formatFarmValue(farm.sizeAcres),
+      nitrogen: formatFarmValue(farm.nitrogen),
+      phosphorous: formatFarmValue(farm.phosphorus),
+      potassium: formatFarmValue(farm.potassium),
+      soilType: normalizeSoilType(farm.soilType, options.soil_types) || prev.soilType,
+      irrigationType: irrigationMatch || prev.irrigationType,
+    }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      farmSizeAcres: '',
+      nitrogen: '',
+      phosphorous: '',
+      potassium: '',
+      soilType: '',
+      irrigationType: '',
+    }));
+    setFarmDropdownOpen(false);
+    setResult(null);
     if (error) {
       setError('');
     }
@@ -204,6 +291,49 @@ const YieldPredictScreen = () => {
     </View>
   );
 
+  const selectedFarm = farms.find((farm) => farm.id === formData.farmId);
+
+  const renderFarmSelector = () => (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>Select Farm</Text>
+      <Text style={styles.helperText}>Farm size and NPK values will fill automatically.</Text>
+
+      <Pressable
+        style={styles.dropdownButton}
+        onPress={() => setFarmDropdownOpen((prev) => !prev)}
+        disabled={farmsLoading}
+      >
+        <View style={styles.dropdownButtonContent}>
+          <Text style={selectedFarm ? styles.dropdownText : styles.dropdownPlaceholder}>
+            {selectedFarm?.farmName || (farmsLoading ? 'Loading farms...' : 'Select a farm')}
+          </Text>
+          <Text style={styles.dropdownIcon}>{farmDropdownOpen ? '^' : 'v'}</Text>
+        </View>
+      </Pressable>
+
+      {farmDropdownOpen ? (
+        <View style={styles.dropdownMenu}>
+          {farms.length ? (
+            farms.map((farm) => (
+              <Pressable
+                key={farm.id}
+                style={styles.dropdownItem}
+                onPress={() => handleSelectFarm(farm)}
+              >
+                <Text style={styles.dropdownItemTitle}>{farm.farmName || 'Unnamed Farm'}</Text>
+                <Text style={styles.dropdownItemSubtitle}>
+                  {farm.sizeAcres || 0} acres - N {farm.nitrogen ?? 0} - P {farm.phosphorus ?? 0} - K {farm.potassium ?? 0}
+                </Text>
+              </Pressable>
+            ))
+          ) : (
+            <Text style={styles.dropdownEmptyText}>No saved farms found.</Text>
+          )}
+        </View>
+      ) : null}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <KeyboardAvoidingView
@@ -215,6 +345,8 @@ const YieldPredictScreen = () => {
           <Text style={styles.subtitle}>Estimate yield from crop, farm, irrigation, fertilizer, and nutrients.</Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+          {renderFarmSelector()}
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Crop</Text>
@@ -382,6 +514,67 @@ const styles = StyleSheet.create({
   },
   fieldBlock: {
     marginBottom: theme.spacing.md,
+  },
+  dropdownButton: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  dropdownButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dropdownText: {
+    flex: 1,
+    color: theme.colors.text,
+    fontSize: theme.fontSize.md,
+    fontWeight: '600',
+    paddingRight: theme.spacing.sm,
+  },
+  dropdownPlaceholder: {
+    flex: 1,
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.md,
+    paddingRight: theme.spacing.sm,
+  },
+  dropdownIcon: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.sm,
+    fontWeight: '700',
+  },
+  dropdownMenu: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    marginTop: theme.spacing.xs,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  dropdownItemTitle: {
+    color: theme.colors.text,
+    fontSize: theme.fontSize.md,
+    fontWeight: '700',
+    marginBottom: theme.spacing.xs,
+  },
+  dropdownItemSubtitle: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.xs,
+  },
+  dropdownEmptyText: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.sm,
+    padding: theme.spacing.md,
   },
   label: {
     color: theme.colors.text,
