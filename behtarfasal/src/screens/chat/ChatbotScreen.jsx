@@ -140,53 +140,9 @@ const loadLocalChatSessions = async (userId) => {
     );
 };
 
-const writeLocalChatSessions = async (userId, sessionsToStore) => {
-  await AsyncStorage.setItem(
-    getLocalChatSessionKey(userId),
-    JSON.stringify(sessionsToStore)
-  );
+const removeLocalChatSessions = async (userId) => {
+  await AsyncStorage.removeItem(getLocalChatSessionKey(userId));
 };
-
-const saveLocalChatSession = async (userId, sessionData, sessionId = null) => {
-  const savedSessions = await loadLocalChatSessions(userId);
-  const messages = normalizeChatMessages(sessionData?.messages);
-  const title = String(sessionData?.title || "").trim() || buildSessionTitle(messages);
-  const safeSessionId =
-    String(sessionId || "").trim() ||
-    `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const existingSession = savedSessions.find((item) => item.id === safeSessionId);
-  const lastUserMessage = [...messages].reverse().find((item) => item.role === "user");
-  const now = new Date().toISOString();
-  const nextSession = {
-    id: safeSessionId,
-    title,
-    preview: String(
-      lastUserMessage?.content || messages[messages.length - 1]?.content || ""
-    ).slice(0, 160),
-    messages,
-    messageCount: messages.length,
-    createdAt: existingSession?.createdAt || now,
-    updatedAt: now,
-    storage: "local",
-  };
-  const nextSessions = [
-    nextSession,
-    ...savedSessions.filter((item) => item.id !== safeSessionId),
-  ].slice(0, 20);
-
-  await writeLocalChatSessions(userId, nextSessions);
-  return safeSessionId;
-};
-
-const deleteLocalChatSession = async (userId, sessionId) => {
-  const savedSessions = await loadLocalChatSessions(userId);
-  await writeLocalChatSessions(
-    userId,
-    savedSessions.filter((item) => item.id !== sessionId)
-  );
-};
-
-const getSessionStorage = (session) => session?.storage || "cloud";
 
 const toLocalDateKey = (date) => {
   const value = date instanceof Date ? date : new Date(date);
@@ -263,53 +219,75 @@ const ChatbotScreen = () => {
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
-  const [activeSessionStorage, setActiveSessionStorage] = useState(null);
   const [chatHistory, setChatHistory] = useState(() => createInitialHistory());
   const scrollViewRef = useRef();
   const initializedSessionsRef = useRef(false);
 
-  const refreshSessions = useCallback(async ({ openLatest = false } = {}) => {
-    const userId = auth.currentUser?.uid;
+  const migrateLocalChatSessionsToCloud = useCallback(async (userId) => {
+    const localSessions = await loadLocalChatSessions(userId);
+    const sessionsToMigrate = localSessions.filter((session) =>
+      session.messages.some((item) => item.role === "user")
+    );
 
-    if (!userId) {
-      setSessions([]);
-      return;
+    if (sessionsToMigrate.length === 0) {
+      if (localSessions.length > 0) {
+        await removeLocalChatSessions(userId);
+      }
+      return false;
     }
 
-    setSessionsLoading(true);
-
-    try {
-      const savedSessions = (await getChatSessions(userId)).map((item) => ({
-        ...item,
-        storage: "cloud",
-      }));
-      setSessions(savedSessions);
-
-      if (openLatest && savedSessions.length > 0) {
-        setActiveSessionId(savedSessions[0].id);
-        setActiveSessionStorage(getSessionStorage(savedSessions[0]));
-        setChatHistory(normalizeChatMessages(savedSessions[0].messages));
-      }
-    } catch (_err) {
-      const localSessions = await loadLocalChatSessions(userId);
-      setSessions(localSessions);
-
-      if (openLatest && localSessions.length > 0) {
-        setActiveSessionId(localSessions[0].id);
-        setActiveSessionStorage("local");
-        setChatHistory(normalizeChatMessages(localSessions[0].messages));
-      }
-    } finally {
-      setSessionsLoading(false);
-    }
+    await Promise.all(
+      sessionsToMigrate.map((session) =>
+        saveChatSession(
+          userId,
+          {
+            title: session.title,
+            messages: session.messages,
+            createdAt: session.createdAt,
+          },
+          session.id
+        )
+      )
+    );
+    await removeLocalChatSessions(userId);
+    return true;
   }, []);
 
+  const refreshSessions = useCallback(
+    async ({ openLatest = false } = {}) => {
+      const userId = auth.currentUser?.uid;
+
+      if (!userId) {
+        setSessions([]);
+        return;
+      }
+
+      setSessionsLoading(true);
+
+      try {
+        await migrateLocalChatSessionsToCloud(userId);
+        const savedSessions = await getChatSessions(userId);
+        setSessions(savedSessions);
+
+        if (openLatest && savedSessions.length > 0) {
+          setActiveSessionId(savedSessions[0].id);
+          setChatHistory(normalizeChatMessages(savedSessions[0].messages));
+        }
+      } catch (err) {
+        setSessions([]);
+        setError(
+          err.message ||
+            "Chat sessions database se load nahi ho sakin. Please try again."
+        );
+      } finally {
+        setSessionsLoading(false);
+      }
+    },
+    [migrateLocalChatSessionsToCloud]
+  );
+
   const persistChatSession = useCallback(
-    async (
-      messagesToSave,
-      sessionId = activeSessionId,
-      sessionStorage = activeSessionStorage
-    ) => {
+    async (messagesToSave, sessionId = activeSessionId) => {
       const userId = auth.currentUser?.uid;
 
       if (!userId || !messagesToSave.some((item) => item.role === "user")) {
@@ -320,45 +298,19 @@ const ChatbotScreen = () => {
         title: buildSessionTitle(messagesToSave),
         messages: messagesToSave,
       };
-
-      if (sessionStorage === "local") {
-        const savedSessionId = await saveLocalChatSession(
-          userId,
-          sessionPayload,
-          sessionId
-        );
-        setActiveSessionId(savedSessionId);
-        setActiveSessionStorage("local");
-        setSessions(await loadLocalChatSessions(userId));
-        return savedSessionId;
-      }
-
-      let savedSessionId = sessionId;
-      let savedSessions = [];
-
-      try {
-        savedSessionId = await saveChatSession(userId, sessionPayload, sessionId);
-        savedSessions = (await getChatSessions(userId)).map((item) => ({
-          ...item,
-          storage: "cloud",
-        }));
-        setActiveSessionStorage("cloud");
-      } catch (_error) {
-        savedSessionId = await saveLocalChatSession(
-          userId,
-          sessionPayload,
-          String(sessionId || "").startsWith("local_") ? sessionId : null
-        );
-        savedSessions = await loadLocalChatSessions(userId);
-        setActiveSessionStorage("local");
-      }
+      const savedSessionId = await saveChatSession(
+        userId,
+        sessionPayload,
+        sessionId
+      );
+      const savedSessions = await getChatSessions(userId);
 
       setActiveSessionId(savedSessionId);
       setSessions(savedSessions);
 
       return savedSessionId;
     },
-    [activeSessionId, activeSessionStorage]
+    [activeSessionId]
   );
 
   const handleNewChat = () => {
@@ -367,7 +319,6 @@ const ChatbotScreen = () => {
     }
 
     setActiveSessionId(null);
-    setActiveSessionStorage(null);
     setChatHistory(createInitialHistory());
     setMessage("");
     setError("");
@@ -382,14 +333,14 @@ const ChatbotScreen = () => {
     setError("");
 
     try {
-      const sessionStorage = getSessionStorage(session);
-      const selectedSession =
-        userId && sessionStorage === "cloud"
-          ? await getChatSession(userId, session.id)
-          : session;
+      if (!userId) {
+        setError("Please login to open saved chat sessions.");
+        return;
+      }
+
+      const selectedSession = await getChatSession(userId, session.id);
 
       setActiveSessionId(session.id);
-      setActiveSessionStorage(sessionStorage);
       setChatHistory(
         normalizeChatMessages(selectedSession?.messages || session.messages)
       );
@@ -406,14 +357,9 @@ const ChatbotScreen = () => {
     }
 
     try {
-      if (activeSessionStorage === "local") {
-        await deleteLocalChatSession(userId, activeSessionId);
-      } else {
-        await deleteChatSession(userId, activeSessionId);
-      }
+      await deleteChatSession(userId, activeSessionId);
 
       setActiveSessionId(null);
-      setActiveSessionStorage(null);
       setChatHistory(createInitialHistory());
       setMessage("");
       setError("");
@@ -511,8 +457,13 @@ const ChatbotScreen = () => {
     } finally {
       try {
         await persistChatSession(historyToStore);
-      } catch (_saveError) {
-        setError((prev) => prev || "Chat session save nahi ho saki. Please try again.");
+      } catch (saveError) {
+        setError(
+          (prev) =>
+            prev ||
+            saveError.message ||
+            "Chat session save nahi ho saki. Please try again."
+        );
       } finally {
         setLoading(false);
       }

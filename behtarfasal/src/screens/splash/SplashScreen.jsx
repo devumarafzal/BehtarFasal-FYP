@@ -17,7 +17,7 @@ const SplashScreen = () => {
 
         <Text style={styles.brandTitle}>BehtarFasal</Text>
         <Text style={styles.brandUrdu}>بہتر فصل</Text>
-        <Text style={styles.subtitle}>Smart Crop Recommendations</Text>
+        <Text style={styles.subtitle}>AI-Powered Crop Recommendations</Text>
       </View>
     </SafeAreaView>
   );

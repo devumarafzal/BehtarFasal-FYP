@@ -468,7 +468,15 @@ export const saveChatSession = async (userId, sessionData, sessionId = null) => 
 
     const safeSessionId = String(sessionId || '').trim();
     if (safeSessionId) {
-      await setDoc(getChatSessionRef(userId, safeSessionId), payload, { merge: true });
+      const sessionCreatedAt = sessionData?.createdAt;
+      await setDoc(
+        getChatSessionRef(userId, safeSessionId),
+        {
+          ...payload,
+          ...(sessionCreatedAt ? { createdAt: sessionCreatedAt } : {}),
+        },
+        { merge: true }
+      );
       return safeSessionId;
     }
 
