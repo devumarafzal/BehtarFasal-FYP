@@ -35,15 +35,23 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    elevation: 3,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    borderTopWidth: 4,
+    borderTopColor: theme.colors.accentGreen,
   },
   city: {
     fontSize: theme.fontSize.lg,
-    color: theme.colors.text,
+    color: theme.colors.headerGreen,
     fontWeight: '700',
+    letterSpacing: 0.2,
   },
   temp: {
     fontSize: theme.fontSize.xxl,
-    color: theme.colors.primary,
+    color: theme.colors.accentGreen,
     fontWeight: '700',
     marginTop: theme.spacing.xs,
   },
@@ -51,6 +59,7 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.md,
     color: theme.colors.textSecondary,
     marginBottom: theme.spacing.sm,
+    fontWeight: '600',
   },
   metricsRow: {
     flexDirection: 'row',
@@ -60,6 +69,7 @@ const styles = StyleSheet.create({
   metric: {
     color: theme.colors.text,
     fontSize: theme.fontSize.sm,
+    fontWeight: '500',
   },
 });
 

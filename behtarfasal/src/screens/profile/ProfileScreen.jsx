@@ -16,7 +16,11 @@ import { logoutUser } from '../../firebase/auth';
 import { auth } from '../../firebase/config';
 import { createUserProfile, getFarms, getUserProfile, updateUserProfile } from '../../firebase/firestore';
 
-const LANGUAGES = ['english', 'urdu'];
+const LANGUAGES = [
+  { label: 'English', value: 'english' },
+  { label: 'Urdu', value: 'urdu' },
+];
+const LANGUAGE_VALUES = LANGUAGES.map((language) => language.value);
 const NAME_PATTERN = /^[A-Za-z][A-Za-z\s'.-]{1,59}$/;
 const PHONE_PATTERN = /^\+?[0-9\s-]{10,15}$/;
 const PHONE_INPUT_PATTERN = /^[0-9+\-\s]*$/;
@@ -113,7 +117,7 @@ const ProfileScreen = ({ navigation }) => {
       return 'Phone number must be 10-15 digits (you can use +, spaces, or hyphen).';
     }
 
-    if (!LANGUAGES.includes(formData.language)) {
+    if (!LANGUAGE_VALUES.includes(formData.language)) {
       return 'Please select a valid language.';
     }
 
@@ -233,15 +237,15 @@ const ProfileScreen = ({ navigation }) => {
           <Text style={styles.label}>Preferred Language</Text>
           <View style={styles.languageRow}>
             {LANGUAGES.map((language) => {
-              const selected = formData.language === language;
+              const selected = formData.language === language.value;
               return (
                 <Pressable
-                  key={language}
+                  key={language.value}
                   style={[styles.languageChip, selected && styles.languageChipSelected]}
-                  onPress={() => updateField('language', language)}
+                  onPress={() => updateField('language', language.value)}
                 >
                   <Text style={[styles.languageChipText, selected && styles.languageChipTextSelected]}>
-                    {language}
+                    {language.label}
                   </Text>
                 </Pressable>
               );
@@ -295,15 +299,17 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.xl,
   },
   title: {
-    color: theme.colors.text,
+    color: theme.colors.headerGreen,
     fontSize: theme.fontSize.xl,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   subtitle: {
     color: theme.colors.textSecondary,
     fontSize: theme.fontSize.sm,
     marginTop: theme.spacing.xs,
     marginBottom: theme.spacing.md,
+    fontWeight: '500',
   },
   card: {
     backgroundColor: theme.colors.surface,
@@ -312,12 +318,20 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.md,
     marginBottom: theme.spacing.md,
+    elevation: 2,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.accentGreen,
   },
   cardTitle: {
-    color: theme.colors.text,
+    color: theme.colors.headerGreen,
     fontSize: theme.fontSize.lg,
-    fontWeight: '700',
+    fontWeight: '800',
     marginBottom: theme.spacing.sm,
+    letterSpacing: 0.4,
   },
   metaText: {
     color: theme.colors.textSecondary,
@@ -328,15 +342,17 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   label: {
-    color: theme.colors.text,
+    color: theme.colors.headerGreen,
     fontSize: theme.fontSize.sm,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: theme.spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   input: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: '#FAFFFE',
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     borderRadius: theme.borderRadius.md,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
@@ -348,8 +364,8 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.xs,
   },
   languageChip: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     borderRadius: theme.borderRadius.md,
     paddingVertical: theme.spacing.xs,
     paddingHorizontal: theme.spacing.md,
@@ -357,8 +373,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
   },
   languageChipSelected: {
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.headerGreen,
+    backgroundColor: theme.colors.headerGreen,
   },
   languageChipText: {
     color: theme.colors.text,
@@ -367,47 +383,60 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   languageChipTextSelected: {
-    color: theme.colors.surface,
+    color: theme.colors.headerText,
   },
   errorText: {
     color: theme.colors.error,
     fontSize: theme.fontSize.sm,
     marginBottom: theme.spacing.md,
+    fontWeight: '600',
   },
   loaderContainer: {
     alignItems: 'center',
     marginBottom: theme.spacing.md,
   },
   primaryButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.headerGreen,
     borderRadius: theme.borderRadius.md,
     paddingVertical: theme.spacing.md,
     alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   primaryButtonText: {
-    color: theme.colors.surface,
+    color: theme.colors.headerText,
     fontSize: theme.fontSize.md,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   quickRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: theme.spacing.md,
+    gap: theme.spacing.sm,
   },
   secondaryButton: {
-    width: '48%',
+    flex: 1,
     backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     borderRadius: theme.borderRadius.md,
     paddingVertical: theme.spacing.sm,
     alignItems: 'center',
+    elevation: 1,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
   },
   secondaryButtonText: {
-    color: theme.colors.text,
+    color: theme.colors.headerGreen,
     fontSize: theme.fontSize.sm,
     fontWeight: '600',
   },
@@ -417,6 +446,11 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     paddingVertical: theme.spacing.sm,
     alignItems: 'center',
+    elevation: 2,
+    shadowColor: theme.colors.error,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   logoutButtonText: {
     color: theme.colors.surface,

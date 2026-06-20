@@ -1,4 +1,5 @@
-import { useEffect, useCallback, useState, useContext } from 'react';
+import { useEffect, useCallback, useState } from 'react';
+import * as Location from 'expo-location';
 import {
     ActivityIndicator,
     Pressable,
@@ -12,7 +13,10 @@ import WeatherCard from '../../components/WeatherCard';
 import { theme } from '../../constants/theme';
 import { auth } from '../../firebase/config';
 import { getFarms, getUserProfile, getAllCalendarPlans } from '../../firebase/firestore';
-import { WeatherContext } from '../../contexts/WeatherContext';
+import {
+  getCurrentWeather,
+  getCurrentWeatherByCoords,
+} from '../../services/weatherService';
 
 const DashboardScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
@@ -21,8 +25,38 @@ const DashboardScreen = ({ navigation }) => {
   const [totalFarms, setTotalFarms] = useState(0);
   const [activeCrops, setActiveCrops] = useState(0);
   const [recentFarms, setRecentFarms] = useState([]);
+  const [weather, setWeather] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
 
-  const { weather, weatherLoading } = useContext(WeatherContext);
+  const loadWeather = useCallback(async () => {
+    setWeatherLoading(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (permission.status === 'granted') {
+        const location = await Location.getCurrentPositionAsync({});
+        const weatherData = await getCurrentWeatherByCoords(
+          location.coords.latitude,
+          location.coords.longitude
+        );
+        setWeather(weatherData);
+        return;
+      }
+
+      const weatherData = await getCurrentWeather('Lahore');
+      setWeather(weatherData);
+    } catch (err) {
+      // Fallback to Lahore if location fails
+      try {
+        const weatherData = await getCurrentWeather('Lahore');
+        setWeather(weatherData);
+      } catch (_err) {
+        setWeather(null);
+      }
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     const userId = auth.currentUser?.uid;
@@ -57,7 +91,8 @@ const DashboardScreen = ({ navigation }) => {
 
   useEffect(() => {
     loadDashboard();
-  }, [loadDashboard]);
+    loadWeather();
+  }, [loadDashboard, loadWeather]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
@@ -139,10 +174,11 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.xl,
   },
   greeting: {
-    fontSize: theme.fontSize.xl,
-    color: theme.colors.text,
-    fontWeight: '700',
-    marginBottom: theme.spacing.md,
+    fontSize: theme.fontSize.xxl,
+    color: theme.colors.headerGreen,
+    fontWeight: '800',
+    marginBottom: theme.spacing.lg,
+    letterSpacing: 0.5,
   },
   errorText: {
     color: theme.colors.error,
@@ -156,40 +192,50 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+    gap: theme.spacing.sm,
   },
   summaryCard: {
-    width: '48%',
+    flex: 1,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     padding: theme.spacing.md,
+    elevation: 3,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   summaryLabel: {
     color: theme.colors.textSecondary,
     fontSize: theme.fontSize.sm,
     marginBottom: theme.spacing.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   summaryValue: {
-    color: theme.colors.primary,
-    fontSize: theme.fontSize.xl,
+    color: theme.colors.headerGreen,
+    fontSize: theme.fontSize.xxl,
     fontWeight: '800',
   },
   sectionHeader: {
-    marginTop: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   sectionTitle: {
-    color: theme.colors.text,
+    color: theme.colors.headerGreen,
     fontSize: theme.fontSize.lg,
     fontWeight: '700',
+    letterSpacing: 0.4,
   },
   linkText: {
-    color: theme.colors.primary,
+    color: theme.colors.accentGreen,
     fontSize: theme.fontSize.sm,
     fontWeight: '700',
   },
@@ -213,6 +259,13 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.md,
     marginBottom: theme.spacing.sm,
+    elevation: 2,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.accentGreen,
   },
   recentTitle: {
     color: theme.colors.text,

@@ -20,7 +20,7 @@ const DiseaseDetectScreen = () => {
   const [result, setResult] = useState(null);
 
   const CONFIDENCE_THRESHOLD = 70;
-  const imageMediaType = ImagePicker.MediaType?.Images || 'images';
+  const imagePickerOptions = { quality: 0.8, mediaTypes: ['images'] };
 
   const pickImage = async () => {
     setError('');
@@ -32,9 +32,7 @@ const DiseaseDetectScreen = () => {
     }
 
     try {
-      const options = { quality: 0.8, mediaTypes: [imageMediaType] };
-
-      const output = await ImagePicker.launchImageLibraryAsync(options);
+      const output = await ImagePicker.launchImageLibraryAsync(imagePickerOptions);
 
       if (!output.canceled && output.assets?.length) {
         setSelectedImage(output.assets[0]);
@@ -55,9 +53,7 @@ const DiseaseDetectScreen = () => {
     }
 
     try {
-      const options = { quality: 0.8, mediaTypes: [imageMediaType] };
-
-      const output = await ImagePicker.launchCameraAsync(options);
+      const output = await ImagePicker.launchCameraAsync(imagePickerOptions);
 
       if (!output.canceled && output.assets?.length) {
         setSelectedImage(output.assets[0]);

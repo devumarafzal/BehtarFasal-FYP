@@ -92,7 +92,7 @@ const RegisterScreen = ({ navigation }) => {
         >
           <View style={styles.container}>
             <View style={styles.logoCircle}>
-              <MaterialCommunityIcons name="sprout" size={44} color={theme.colors.primaryLight} />
+              <MaterialCommunityIcons name="sprout" size={44} color={theme.colors.headerGreen} />
             </View>
 
             <Text style={styles.title}>Create Account</Text>
@@ -225,7 +225,7 @@ const RegisterScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F3F3F3',
+    backgroundColor: theme.colors.background,
   },
   keyboardView: {
     flex: 1,
@@ -236,6 +236,7 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingTop: theme.spacing.xl,
     paddingBottom: theme.spacing.lg,
     paddingHorizontal: theme.spacing.md,
@@ -244,53 +245,63 @@ const styles = StyleSheet.create({
     width: 114,
     height: 114,
     borderRadius: 57,
-    backgroundColor: '#E8EFE7',
+    backgroundColor: '#D4E8D4',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: theme.spacing.md,
     marginBottom: theme.spacing.lg,
+    borderWidth: 3,
+    borderColor: theme.colors.accentGreen,
+    elevation: 2,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
   title: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: theme.colors.primary,
+    fontSize: 32,
+    fontWeight: '800',
+    color: theme.colors.headerGreen,
     marginBottom: theme.spacing.xs,
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: 16,
     color: theme.colors.textSecondary,
     marginBottom: theme.spacing.xl,
     textAlign: 'center',
+    fontWeight: '500',
   },
   formCard: {
     width: '100%',
     maxWidth: 340,
     backgroundColor: theme.colors.surface,
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#DCDCDC',
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     paddingHorizontal: 22,
-    paddingTop: 26,
-    paddingBottom: 28,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
+    paddingTop: 24,
+    paddingBottom: 30,
+    shadowColor: '#2E7D32',
+    shadowOpacity: 0.15,
     shadowOffset: { width: 0, height: 3 },
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 4,
   },
   inputWrapper: {
-    borderWidth: 1,
-    borderColor: '#D4D4D4',
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     borderRadius: 18,
     minHeight: 58,
     marginBottom: 14,
     paddingHorizontal: 16,
     justifyContent: 'center',
+    backgroundColor: '#FAFFFE',
   },
   input: {
     flex: 1,
-    color: '#4F4F4F',
+    color: theme.colors.text,
     fontSize: 16,
     paddingVertical: 8,
   },
@@ -313,16 +324,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   primaryButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.headerGreen,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 6,
+    elevation: 2,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   primaryButtonText: {
-    color: theme.colors.surface,
+    color: theme.colors.headerText,
     fontWeight: '600',
     fontSize: 19,
+    letterSpacing: 0.3,
   },
   footerRow: {
     flexDirection: 'row',
@@ -331,16 +348,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footerText: {
-    color: '#6F6F6F',
+    color: theme.colors.textSecondary,
     fontSize: 17,
   },
   footerLink: {
-    color: theme.colors.primary,
+    color: theme.colors.accentGreen,
     fontSize: 17,
     fontWeight: '700',
   },
   termsText: {
-    color: '#8B8B8B',
+    color: theme.colors.textSecondary,
     fontSize: 14,
     textAlign: 'center',
     marginTop: theme.spacing.xl,
@@ -348,6 +365,7 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     maxWidth: 350,
   },
-});
+}
+);
 
 export default RegisterScreen;

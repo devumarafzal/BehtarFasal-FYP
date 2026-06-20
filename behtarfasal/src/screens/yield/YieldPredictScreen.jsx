@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,46 +12,24 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
-import { getFertilizerRecommendation } from '../../services/fertilizerService';
+import { getYieldOptions, predictYield } from '../../services/yieldService';
 
-const SOIL_TYPES = ['Black', 'Clayey', 'Loamy', 'Red', 'Sandy'];
-const CROP_TYPES = [
-  'Barley',
-  'Cotton',
-  'Ground Nuts',
-  'Maize',
-  'Millets',
-  'Oil seeds',
-  'Paddy',
-  'Pulses',
-  'Sugarcane',
-  'Tobacco',
-  'Wheat',
-];
+const FALLBACK_OPTIONS = {
+  crops: ['Cotton', 'Maize', 'Potato', 'Rice', 'Sugarcane', 'Wheat'],
+  soil_types: ['Black', 'Clayey', 'Loamy', 'Red', 'Sandy'],
+  irrigation_types: ['Bore Well', 'Canal Water', 'Drip Irrigation', 'Flood Irrigation', 'Rain Fed', 'Sprinkler System'],
+  fertilizers: ['10-26-26', '14-35-14', '17-17-17', '20-20', '28-28', 'DAP', 'MOP', 'None', 'Urea'],
+};
 
 const NUMERIC_INPUT_PATTERN = /^\d*\.?\d*$/;
-const NUMERIC_FIELDS = ['temperature', 'humidity', 'moisture', 'nitrogen', 'phosphorus', 'potassium'];
+const NUMERIC_FIELDS = ['farmSizeAcres', 'nitrogen', 'phosphorous', 'potassium'];
 const FIELD_RULES = {
-  temperature: {
-    label: 'Temperature',
-    min: 0,
-    max: 60,
-    suffix: 'C',
-    helper: 'Enter 0 to 60 C.',
-  },
-  humidity: {
-    label: 'Humidity',
-    min: 0,
-    max: 100,
-    suffix: '%',
-    helper: 'Enter 0 to 100%.',
-  },
-  moisture: {
-    label: 'Moisture',
-    min: 0,
-    max: 100,
-    suffix: '%',
-    helper: 'Enter 0 to 100%.',
+  farmSizeAcres: {
+    label: 'Farm Size',
+    min: 0.1,
+    max: 1000,
+    suffix: 'acres',
+    helper: 'Enter farm size in acres.',
   },
   nitrogen: {
     label: 'Nitrogen',
@@ -60,8 +38,8 @@ const FIELD_RULES = {
     suffix: 'N',
     helper: 'Enter 0 to 300.',
   },
-  phosphorus: {
-    label: 'Phosphorus',
+  phosphorous: {
+    label: 'Phosphorous',
     min: 0,
     max: 300,
     suffix: 'P',
@@ -77,22 +55,55 @@ const FIELD_RULES = {
 };
 
 const INITIAL_FORM = {
+  crop: '',
   soilType: '',
-  cropType: '',
-  temperature: '',
-  humidity: '',
-  moisture: '',
+  irrigationType: '',
+  fertilizerUsed: '',
+  farmSizeAcres: '',
   nitrogen: '',
-  phosphorus: '',
+  phosphorous: '',
   potassium: '',
 };
 
-const FertilizerScreen = () => {
+const YieldPredictScreen = () => {
   const [formData, setFormData] = useState(INITIAL_FORM);
+  const [options, setOptions] = useState(FALLBACK_OPTIONS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadOptions = async () => {
+      try {
+        const response = await getYieldOptions();
+        if (!mounted) {
+          return;
+        }
+
+        setOptions({
+          crops: response.crops?.length ? response.crops : FALLBACK_OPTIONS.crops,
+          soil_types: response.soil_types?.length ? response.soil_types : FALLBACK_OPTIONS.soil_types,
+          irrigation_types: response.irrigation_types?.length
+            ? response.irrigation_types
+            : FALLBACK_OPTIONS.irrigation_types,
+          fertilizers: response.fertilizers?.length ? response.fertilizers : FALLBACK_OPTIONS.fertilizers,
+        });
+      } catch (_err) {
+        if (mounted) {
+          setOptions(FALLBACK_OPTIONS);
+        }
+      }
+    };
+
+    loadOptions();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const updateField = (key, value) => {
     if (NUMERIC_FIELDS.includes(key) && !NUMERIC_INPUT_PATTERN.test(value)) {
@@ -109,13 +120,17 @@ const FertilizerScreen = () => {
   const validateForm = () => {
     const nextFieldErrors = {};
 
-    if (!formData.soilType || !formData.cropType) {
-      if (!formData.soilType) {
-        nextFieldErrors.soilType = 'Select a soil type.';
-      }
-      if (!formData.cropType) {
-        nextFieldErrors.cropType = 'Select a crop type.';
-      }
+    if (!formData.crop) {
+      nextFieldErrors.crop = 'Select a crop.';
+    }
+    if (!formData.soilType) {
+      nextFieldErrors.soilType = 'Select a soil type.';
+    }
+    if (!formData.irrigationType) {
+      nextFieldErrors.irrigationType = 'Select an irrigation type.';
+    }
+    if (!formData.fertilizerUsed) {
+      nextFieldErrors.fertilizerUsed = 'Select a fertilizer.';
     }
 
     for (const key of NUMERIC_FIELDS) {
@@ -133,7 +148,7 @@ const FertilizerScreen = () => {
       }
 
       if (numeric < rule.min || numeric > rule.max) {
-        nextFieldErrors[key] = `${rule.label} must be between ${rule.min} and ${rule.max}${rule.suffix ? ` ${rule.suffix}` : ''}.`;
+        nextFieldErrors[key] = `${rule.label} must be between ${rule.min} and ${rule.max} ${rule.suffix}.`;
       }
     }
 
@@ -141,7 +156,7 @@ const FertilizerScreen = () => {
     return Object.keys(nextFieldErrors).length ? 'Please fix the highlighted fields.' : '';
   };
 
-  const handleRecommend = async () => {
+  const handlePredict = async () => {
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
@@ -153,25 +168,41 @@ const FertilizerScreen = () => {
     setResult(null);
 
     try {
-      const payload = {
+      const response = await predictYield({
+        crop: formData.crop,
+        farmSizeAcres: Number(formData.farmSizeAcres),
         soilType: formData.soilType,
-        cropType: formData.cropType,
-        temperature: Number(formData.temperature),
-        humidity: Number(formData.humidity),
-        moisture: Number(formData.moisture),
+        irrigationType: formData.irrigationType,
+        fertilizerUsed: formData.fertilizerUsed,
         nitrogen: Number(formData.nitrogen),
-        phosphorus: Number(formData.phosphorus),
+        phosphorous: Number(formData.phosphorous),
         potassium: Number(formData.potassium),
-      };
+      });
 
-      const response = await getFertilizerRecommendation(payload);
       setResult(response?.data || null);
     } catch (err) {
-      setError(err.message || 'Unable to generate fertilizer suggestion.');
+      setError(err.message || 'Unable to predict yield.');
     } finally {
       setLoading(false);
     }
   };
+
+  const renderChips = (items, keyName) => (
+    <View style={styles.chipRow}>
+      {items.map((item) => {
+        const selected = formData[keyName] === item;
+        return (
+          <Pressable
+            key={item}
+            style={[styles.chip, selected && styles.chipSelected]}
+            onPress={() => updateField(keyName, item)}
+          >
+            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{item}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
@@ -180,52 +211,41 @@ const FertilizerScreen = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>Fertilizer Suggestion</Text>
-          <Text style={styles.subtitle}>Provide soil, crop, and nutrient values for a recommendation.</Text>
+          <Text style={styles.title}>Yield Prediction</Text>
+          <Text style={styles.subtitle}>Estimate yield from crop, farm, irrigation, fertilizer, and nutrients.</Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Crop</Text>
+            {fieldErrors.crop ? <Text style={styles.fieldErrorText}>{fieldErrors.crop}</Text> : null}
+            {renderChips(options.crops, 'crop')}
+          </View>
+
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>Soil Type</Text>
             {fieldErrors.soilType ? <Text style={styles.fieldErrorText}>{fieldErrors.soilType}</Text> : null}
-            <View style={styles.chipRow}>
-              {SOIL_TYPES.map((soil) => {
-                const selected = formData.soilType === soil;
-                return (
-                  <Pressable
-                    key={soil}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                    onPress={() => updateField('soilType', soil)}
-                  >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{soil}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            {renderChips(options.soil_types, 'soilType')}
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Crop Type</Text>
-            {fieldErrors.cropType ? <Text style={styles.fieldErrorText}>{fieldErrors.cropType}</Text> : null}
-            <View style={styles.chipRow}>
-              {CROP_TYPES.map((crop) => {
-                const selected = formData.cropType === crop;
-                return (
-                  <Pressable
-                    key={crop}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                    onPress={() => updateField('cropType', crop)}
-                  >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{crop}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <Text style={styles.sectionTitle}>Irrigation Type</Text>
+            {fieldErrors.irrigationType ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.irrigationType}</Text>
+            ) : null}
+            {renderChips(options.irrigation_types, 'irrigationType')}
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Field Conditions</Text>
+            <Text style={styles.sectionTitle}>Fertilizer Used</Text>
+            {fieldErrors.fertilizerUsed ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.fertilizerUsed}</Text>
+            ) : null}
+            {renderChips(options.fertilizers, 'fertilizerUsed')}
+          </View>
 
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Farm Details</Text>
             {NUMERIC_FIELDS.map((key) => {
               const rule = FIELD_RULES[key];
               const hasError = Boolean(fieldErrors[key]);
@@ -237,12 +257,12 @@ const FertilizerScreen = () => {
                   </Text>
                   <TextInput
                     style={[styles.input, hasError && styles.inputError]}
-                    placeholder={key === 'temperature' ? 'e.g., 26' : key === 'humidity' ? 'e.g., 65' : key === 'moisture' ? 'e.g., 40' : key === 'nitrogen' ? 'e.g., 90' : key === 'phosphorus' ? 'e.g., 45' : 'e.g., 60'}
+                    placeholder={key === 'farmSizeAcres' ? 'e.g., 7' : key === 'nitrogen' ? 'e.g., 126' : key === 'phosphorous' ? 'e.g., 120' : 'e.g., 128'}
                     placeholderTextColor={theme.colors.textSecondary}
                     keyboardType="decimal-pad"
                     value={formData[key]}
                     onChangeText={(value) => updateField(key, value)}
-                    maxLength={6}
+                    maxLength={7}
                   />
                   <Text style={[styles.helperText, hasError && styles.fieldErrorText]}>
                     {fieldErrors[key] || rule.helper}
@@ -254,36 +274,36 @@ const FertilizerScreen = () => {
 
           <Pressable
             style={[styles.primaryButton, loading && styles.buttonDisabled]}
-            onPress={handleRecommend}
+            onPress={handlePredict}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color={theme.colors.surface} />
             ) : (
-              <Text style={styles.primaryButtonText}>Get Fertilizer Suggestion</Text>
+              <Text style={styles.primaryButtonText}>Predict Yield</Text>
             )}
           </Pressable>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Recommendation</Text>
+            <Text style={styles.sectionTitle}>Prediction</Text>
             {!result ? (
-              <Text style={styles.placeholderText}>Generate a suggestion to view results.</Text>
+              <Text style={styles.placeholderText}>Run a prediction to view estimated yield.</Text>
             ) : (
               <View>
-                <Text style={styles.resultTitle}>{result.fertilizer}</Text>
-                <Text style={styles.resultMeta}>Confidence: {result.confidence}%</Text>
-
-                {result.top_recommendations?.length ? (
-                  <View style={styles.topList}>
-                    <Text style={styles.subheading}>Top Matches</Text>
-                    {result.top_recommendations.map((item, index) => (
-                      <View key={`${item.fertilizer}-${index}`} style={styles.predictionRow}>
-                        <Text style={styles.predictionLabel}>{item.fertilizer}</Text>
-                        <Text style={styles.predictionScore}>{item.confidence}%</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
+                <Text style={styles.resultTitle}>
+                  {result.predicted_yield_per_acre} {result.unit}
+                </Text>
+                <Text style={styles.resultMeta}>
+                  Total: {result.total_yield} {result.total_unit}
+                </Text>
+                <View style={styles.predictionRow}>
+                  <Text style={styles.predictionLabel}>Crop</Text>
+                  <Text style={styles.predictionScore}>{result.crop}</Text>
+                </View>
+                <View style={styles.predictionRow}>
+                  <Text style={styles.predictionLabel}>Farm Size</Text>
+                  <Text style={styles.predictionScore}>{result.farm_size_acres} acres</Text>
+                </View>
               </View>
             )}
           </View>
@@ -422,15 +442,6 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm,
     marginBottom: theme.spacing.sm,
   },
-  topList: {
-    marginTop: theme.spacing.sm,
-  },
-  subheading: {
-    color: theme.colors.text,
-    fontSize: theme.fontSize.sm,
-    fontWeight: '700',
-    marginBottom: theme.spacing.xs,
-  },
   predictionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -447,7 +458,8 @@ const styles = StyleSheet.create({
   predictionScore: {
     color: theme.colors.textSecondary,
     fontSize: theme.fontSize.sm,
+    fontWeight: '600',
   },
 });
 
-export default FertilizerScreen;
+export default YieldPredictScreen;

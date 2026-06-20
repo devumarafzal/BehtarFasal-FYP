@@ -72,13 +72,13 @@ const LoginScreen = ({ navigation }) => {
                 <MaterialCommunityIcons
                   name="sprout"
                   size={46}
-                  color={theme.colors.primary}
+                  color={theme.colors.headerGreen}
                   style={styles.logoLeaf}
                 />
                 <MaterialCommunityIcons
                   name="barley"
                   size={38}
-                  color="#E7B42F"
+                  color={theme.colors.accentGreen}
                   style={styles.logoGrain}
                 />
               </View>
@@ -167,7 +167,7 @@ const LoginScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F3F3F3',
+    backgroundColor: theme.colors.background,
   },
   keyboardView: {
     flex: 1,
@@ -179,6 +179,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
     paddingTop: 32,
+    justifyContent: 'center',
     paddingBottom: 28,
     paddingHorizontal: theme.spacing.md,
   },
@@ -186,11 +187,18 @@ const styles = StyleSheet.create({
     width: 114,
     height: 114,
     borderRadius: 57,
-    backgroundColor: '#E8EFE7',
+    backgroundColor: '#D4E8D4',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
     marginBottom: 24,
+    borderWidth: 3,
+    borderColor: theme.colors.accentGreen,
+    elevation: 2,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
   logoIconStack: {
     width: 56,
@@ -207,66 +215,72 @@ const styles = StyleSheet.create({
     top: 3,
   },
   brandTitle: {
-    fontSize: 29,
-    fontWeight: '700',
-    color: theme.colors.primary,
+    fontSize: 32,
+    fontWeight: '800',
+    color: theme.colors.headerGreen,
     textAlign: 'center',
+    letterSpacing: 0.8,
   },
   brandUrdu: {
-    fontSize: 21,
-    color: theme.colors.primary,
+    fontSize: 24,
+    color: theme.colors.accentGreen,
     marginTop: 8,
     textAlign: 'center',
     writingDirection: 'rtl',
+    fontWeight: '700',
   },
   brandSubtitle: {
-    fontSize: 16,
-    color: '#6F6F6F',
+    fontSize: 15,
+    color: theme.colors.textSecondary,
     marginTop: 10,
     marginBottom: 26,
     textAlign: 'center',
+    fontWeight: '500',
   },
   formCard: {
     width: '100%',
     maxWidth: 340,
     backgroundColor: theme.colors.surface,
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#DCDCDC',
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 30,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
+    shadowColor: '#2E7D32',
+    shadowOpacity: 0.15,
     shadowOffset: { width: 0, height: 3 },
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 4,
   },
   cardTitle: {
-    fontSize: 24,
-    color: '#252525',
-    fontWeight: '600',
+    fontSize: 26,
+    color: theme.colors.headerGreen,
+    fontWeight: '700',
     marginBottom: 8,
     textAlign: 'center',
+    letterSpacing: 0.4,
   },
   cardSubtitle: {
-    fontSize: 16,
-    color: '#6F6F6F',
+    fontSize: 15,
+    color: theme.colors.textSecondary,
     marginBottom: 24,
     textAlign: 'center',
+    fontWeight: '500',
   },
   inputWrapper: {
-    borderWidth: 1,
-    borderColor: '#D4D4D4',
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
     borderRadius: 18,
     minHeight: 58,
     marginBottom: 14,
     paddingHorizontal: 16,
     justifyContent: 'center',
+    backgroundColor: '#FAFFFE',
   },
   input: {
     flex: 1,
-    color: '#4F4F4F',
+    color: theme.colors.text,
     fontSize: 16,
     paddingVertical: 8,
   },
@@ -287,18 +301,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 10,
     textAlign: 'center',
+    fontWeight: '600',
   },
   primaryButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.headerGreen,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 6,
+    elevation: 2,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   primaryButtonText: {
-    color: theme.colors.surface,
+    color: theme.colors.headerText,
     fontWeight: '600',
     fontSize: 19,
+    letterSpacing: 0.3,
   },
   footerRow: {
     flexDirection: 'row',
@@ -307,11 +328,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footerText: {
-    color: '#6F6F6F',
+    color: theme.colors.textSecondary,
     fontSize: 17,
   },
   footerLink: {
-    color: theme.colors.primary,
+    color: theme.colors.accentGreen,
     fontSize: 17,
     fontWeight: '700',
   },
