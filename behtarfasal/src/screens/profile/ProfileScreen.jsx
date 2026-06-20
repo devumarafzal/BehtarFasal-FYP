@@ -12,13 +12,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
-import { logoutUser } from '../../firebase/auth';
+import { changePassword, logoutUser } from '../../firebase/auth';
 import { auth } from '../../firebase/config';
 import { createUserProfile, getFarms, getUserProfile, updateUserProfile } from '../../firebase/firestore';
 
 const NAME_PATTERN = /^[A-Za-z][A-Za-z\s'.-]{1,59}$/;
 const PHONE_PATTERN = /^\+?[0-9\s-]{10,15}$/;
 const PHONE_INPUT_PATTERN = /^[0-9+\-\s]*$/;
+const PASSWORD_COMPLEXITY_PATTERN = /^(?=.*[A-Za-z])(?=.*\d).{6,}$/;
 
 const formatTimestamp = (timestamp) => {
   if (!timestamp) {
@@ -39,7 +40,9 @@ const formatTimestamp = (timestamp) => {
 const ProfileScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [error, setError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [profileMeta, setProfileMeta] = useState({
     email: '',
     memberSince: 'Not available',
@@ -48,6 +51,11 @@ const ProfileScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
   });
 
   const loadProfile = useCallback(async () => {
@@ -112,7 +120,7 @@ const ProfileScreen = ({ navigation }) => {
     return '';
   };
 
-  const canSave = useMemo(() => !loading && !saving, [loading, saving]);
+  const canSave = useMemo(() => !loading && !saving && !changingPassword, [loading, saving, changingPassword]);
 
   const updateField = (field, value) => {
     if (field === 'phone' && !PHONE_INPUT_PATTERN.test(value)) {
@@ -123,6 +131,33 @@ const ProfileScreen = ({ navigation }) => {
     if (error) {
       setError('');
     }
+  };
+
+  const updatePasswordField = (field, value) => {
+    setPasswordForm((prev) => ({ ...prev, [field]: value }));
+    if (passwordError) {
+      setPasswordError('');
+    }
+  };
+
+  const validatePasswordForm = () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      return 'Please fill in all password fields.';
+    }
+
+    if (!PASSWORD_COMPLEXITY_PATTERN.test(passwordForm.newPassword)) {
+      return 'New password must be at least 6 characters and include letters and numbers.';
+    }
+
+    if (passwordForm.currentPassword === passwordForm.newPassword) {
+      return 'New password must be different from current password.';
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      return 'New password and confirm password do not match.';
+    }
+
+    return '';
   };
 
   const handleSaveProfile = async () => {
@@ -161,6 +196,31 @@ const ProfileScreen = ({ navigation }) => {
       setError(err.message || 'Unable to save profile.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    const validationError = validatePasswordForm();
+    if (validationError) {
+      setPasswordError(validationError);
+      return;
+    }
+
+    setChangingPassword(true);
+    setPasswordError('');
+
+    try {
+      await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      Alert.alert('Success', 'Password changed successfully.');
+    } catch (err) {
+      setPasswordError(err.message || 'Unable to change password.');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -220,6 +280,66 @@ const ProfileScreen = ({ navigation }) => {
               onChangeText={(value) => updateField('phone', value)}
             />
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Change Password</Text>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.label}>Current Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter current password"
+              placeholderTextColor={theme.colors.textSecondary}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={passwordForm.currentPassword}
+              onChangeText={(value) => updatePasswordField('currentPassword', value)}
+            />
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.label}>New Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="At least 6 characters with letters and numbers"
+              placeholderTextColor={theme.colors.textSecondary}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={passwordForm.newPassword}
+              onChangeText={(value) => updatePasswordField('newPassword', value)}
+            />
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.label}>Confirm New Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm new password"
+              placeholderTextColor={theme.colors.textSecondary}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={passwordForm.confirmPassword}
+              onChangeText={(value) => updatePasswordField('confirmPassword', value)}
+            />
+          </View>
+
+          {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+
+          <Pressable
+            style={[styles.secondaryFullButton, (!canSave || changingPassword) && styles.buttonDisabled]}
+            onPress={handleChangePassword}
+            disabled={!canSave || changingPassword}
+          >
+            {changingPassword ? (
+              <ActivityIndicator color={theme.colors.headerGreen} />
+            ) : (
+              <Text style={styles.secondaryFullButtonText}>Change Password</Text>
+            )}
+          </Pressable>
         </View>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -382,6 +502,19 @@ const styles = StyleSheet.create({
     color: theme.colors.headerGreen,
     fontSize: theme.fontSize.sm,
     fontWeight: '600',
+  },
+  secondaryFullButton: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 2,
+    borderColor: theme.colors.accentGreen,
+    borderRadius: theme.borderRadius.md,
+    paddingVertical: theme.spacing.sm,
+    alignItems: 'center',
+  },
+  secondaryFullButtonText: {
+    color: theme.colors.headerGreen,
+    fontSize: theme.fontSize.md,
+    fontWeight: '700',
   },
   logoutButton: {
     marginTop: theme.spacing.md,
