@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getDiseaseAdvice } from '../../constants/diseaseAdvice';
 import { theme } from '../../constants/theme';
 import { detectPlantDisease } from '../../services/diseaseService';
 
@@ -103,6 +104,25 @@ const DiseaseDetectScreen = () => {
     }
   };
 
+  const handleClear = () => {
+    setSelectedImage(null);
+    setResult(null);
+    setError('');
+  };
+
+  const advice = result ? getDiseaseAdvice(result.label, result.confidence) : null;
+
+  const renderAdviceList = (items) => (
+    <View style={styles.adviceList}>
+      {items.map((item, index) => (
+        <View key={`${item}-${index}`} style={styles.adviceRow}>
+          <Text style={styles.bullet}>-</Text>
+          <Text style={styles.adviceText}>{item}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -112,7 +132,16 @@ const DiseaseDetectScreen = () => {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Leaf Photo</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.sectionTitle}>Leaf Photo</Text>
+            <Pressable
+              style={[styles.clearButton, !selectedImage && !result && styles.clearButtonDisabled]}
+              onPress={handleClear}
+              disabled={!selectedImage && !result}
+            >
+              <Text style={styles.clearButtonText}>Clear</Text>
+            </Pressable>
+          </View>
           {selectedImage ? (
             <Image source={{ uri: selectedImage.uri }} style={styles.preview} />
           ) : (
@@ -154,6 +183,39 @@ const DiseaseDetectScreen = () => {
             <View>
               <Text style={styles.resultTitle}>{result.label}</Text>
               <Text style={styles.resultMeta}>Confidence: {result.confidence}%</Text>
+
+              {advice ? (
+                <View style={styles.adviceBox}>
+                  <View style={styles.severityRow}>
+                    <Text style={styles.subheading}>Severity</Text>
+                    <Text
+                      style={[
+                        styles.severityBadge,
+                        advice.severity === 'High' && styles.severityHigh,
+                        advice.severity === 'Medium' && styles.severityMedium,
+                        advice.severity === 'Low' && styles.severityLow,
+                      ]}
+                    >
+                      {advice.severity}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.adviceSummary}>{advice.summary}</Text>
+
+                  <Text style={styles.subheading}>Immediate Actions</Text>
+                  {renderAdviceList(advice.immediateActions)}
+
+                  <Text style={styles.subheading}>Treatment Recommendations</Text>
+                  {renderAdviceList(advice.treatments)}
+
+                  <Text style={styles.subheading}>Prevention Tips</Text>
+                  {renderAdviceList(advice.prevention)}
+
+                  <Text style={styles.disclaimerText}>
+                    Use crop protection products only according to the label and local agriculture department guidance.
+                  </Text>
+                </View>
+              ) : null}
 
               <Text style={styles.subheading}>Top Matches</Text>
               {result.top_predictions?.map((item, index) => (
@@ -208,6 +270,27 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.md,
     fontWeight: '700',
     marginBottom: theme.spacing.sm,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.sm,
+  },
+  clearButton: {
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+  },
+  clearButtonDisabled: {
+    opacity: 0.4,
+  },
+  clearButtonText: {
+    color: theme.colors.error,
+    fontSize: theme.fontSize.sm,
+    fontWeight: '700',
   },
   placeholder: {
     height: 180,
@@ -278,7 +361,75 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: theme.fontSize.sm,
     fontWeight: '700',
+    marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
+  },
+  adviceBox: {
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  severityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xs,
+  },
+  severityBadge: {
+    color: theme.colors.surface,
+    fontSize: theme.fontSize.xs,
+    fontWeight: '700',
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.textSecondary,
+  },
+  severityHigh: {
+    backgroundColor: theme.colors.error,
+  },
+  severityMedium: {
+    backgroundColor: theme.colors.warning,
+  },
+  severityLow: {
+    backgroundColor: theme.colors.success,
+  },
+  adviceSummary: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 20,
+    marginBottom: theme.spacing.sm,
+  },
+  adviceList: {
+    marginBottom: theme.spacing.xs,
+  },
+  adviceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: theme.spacing.xs,
+  },
+  bullet: {
+    color: theme.colors.primary,
+    fontSize: theme.fontSize.sm,
+    fontWeight: '700',
+    marginRight: theme.spacing.xs,
+    lineHeight: 20,
+  },
+  adviceText: {
+    flex: 1,
+    color: theme.colors.text,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 20,
+  },
+  disclaimerText: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.xs,
+    lineHeight: 18,
+    marginTop: theme.spacing.sm,
+    fontStyle: 'italic',
   },
   predictionRow: {
     flexDirection: 'row',

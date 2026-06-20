@@ -1,14 +1,22 @@
 # BehtarFasal Monorepo
 
-BehtarFasal is an AI-powered farming assistant for Pakistani farmers. This repo contains the mobile app and two backend services.
+BehtarFasal is an AI-powered farming assistant for Pakistani farmers. This repo contains the mobile app, the main FastAPI backend, and a separate disease detection backend.
 
 ## Projects
 
 | Path | Description | Default Port |
 | --- | --- | --- |
-| behtarfasal/ | Expo React Native app | 19000 (Expo) |
-| behtarfasal-api/ | Crop recommendation API (FastAPI) | 8000 |
+| behtarfasal/ | Expo React Native app | 8081 (Metro/Expo) |
+| behtarfasal-api/ | Main API: crop, fertilizer, yield, chat (FastAPI) | 8000 |
 | behtarfasal-disease-api/ | Plant disease detection API (FastAPI) | 8001 |
+
+## Features
+
+- Farm profile management with soil, NPK, weather, crop practice, and irrigation details.
+- Crop recommendation, fertilizer recommendation, and yield prediction.
+- Disease detection from leaf images with treatment recommendations and prevention tips.
+- Weather, chatbot, and farming calendar tools.
+- Firebase authentication, profile editing, and password change.
 
 ## Quick Start (Local)
 
@@ -18,7 +26,7 @@ BehtarFasal is an AI-powered farming assistant for Pakistani farmers. This repo 
 - Create .env based on behtarfasal/README.md
 - npm start
 
-2) Crop API
+2) Main API
 - cd behtarfasal-api
 - python -m venv venv
 - venv\Scripts\activate (Windows) / source venv/bin/activate (macOS/Linux)
@@ -47,11 +55,12 @@ BehtarFasal is an AI-powered farming assistant for Pakistani farmers. This repo 
 | EXPO_PUBLIC_FIREBASE_APP_ID | Yes | Firebase app ID | your_app_id |
 | EXPO_PUBLIC_WEATHER_API_KEY | Yes | OpenWeatherMap API key | your_openweathermap_key |
 | EXPO_PUBLIC_GEMINI_API_KEY | Yes | Google Gemini API key | your_gemini_api_key |
-| EXPO_PUBLIC_API_URL | Yes | Base URL for crop API | http://localhost:8000 |
+| EXPO_PUBLIC_API_URL | Yes | Base URL for main API | http://localhost:8000 |
+| EXPO_PUBLIC_DISEASE_API_URL | Yes | Base URL for disease API | http://localhost:8001 |
 
-### Crop API (behtarfasal-api)
+### Main API (behtarfasal-api)
 
-No environment variables are required by default. Make sure the model artifacts exist in app/ml/ as described in the service README.
+`GEMINI_API_KEY` is required for chatbot features. Make sure crop, fertilizer, and yield model artifacts exist in `app/ml/` as described in the service README.
 
 ### Disease API (behtarfasal-disease-api)
 
