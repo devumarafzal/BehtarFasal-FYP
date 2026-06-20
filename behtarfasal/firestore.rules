@@ -11,6 +11,10 @@ service cloud.firestore {
       match /calendarPlans/{planId} {
         allow create, read, update, delete: if request.auth != null && request.auth.uid == userId;
       }
+
+      match /chatSessions/{sessionId} {
+        allow create, read, update, delete: if request.auth != null && request.auth.uid == userId;
+      }
     }
   }
 }

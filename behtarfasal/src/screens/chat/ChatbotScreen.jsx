@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useContext } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
@@ -12,10 +13,20 @@ import {
   TextInput,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
 import Constants from "expo-constants";
+import { WeatherContext } from "../../contexts/WeatherContext";
+import { auth } from "../../firebase/config";
+import {
+  deleteChatSession,
+  getChatSession,
+  getChatSessions,
+  saveChatSession,
+} from "../../firebase/firestore";
 
 // Dynamically get the IP address from Expo bundler if testing on a physical device
 const getApiUrl = () => {
@@ -28,23 +39,404 @@ const getApiUrl = () => {
 };
 
 const API_BASE_URL = getApiUrl();
+const CHAT_SESSION_STORAGE_PREFIX = "@behtarfasal/chatSessions/";
+
+const WELCOME_MESSAGE = {
+  role: "ai",
+  content:
+    "Assalam o Alaikum! Mein AgriAssist hoon, aapka agricultural advisor. Aap kaise hain, aur mein aapki kheti-baari mein kya madad kar sakta hoon?",
+};
+
+const createInitialHistory = () => [{ ...WELCOME_MESSAGE }];
+
+const normalizeChatMessages = (messages) => {
+  const sanitizedMessages = Array.isArray(messages)
+    ? messages
+        .map((item) => ({
+          role: item?.role === "user" ? "user" : "ai",
+          content: String(item?.content || "").trim(),
+        }))
+        .filter((item) => item.content)
+    : [];
+
+  if (!sanitizedMessages.length) {
+    return createInitialHistory();
+  }
+
+  const hasWelcomeMessage =
+    sanitizedMessages[0]?.role === WELCOME_MESSAGE.role &&
+    sanitizedMessages[0]?.content === WELCOME_MESSAGE.content;
+
+  return hasWelcomeMessage
+    ? sanitizedMessages
+    : [...createInitialHistory(), ...sanitizedMessages];
+};
+
+const buildSessionTitle = (messages) => {
+  const firstUserMessage = messages.find((item) => item.role === "user");
+  const title = String(firstUserMessage?.content || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!title) {
+    return "New chat";
+  }
+
+  return title.length > 42 ? `${title.slice(0, 42)}...` : title;
+};
+
+const formatSessionDate = (timestamp) => {
+  const date =
+    typeof timestamp?.toDate === "function"
+      ? timestamp.toDate()
+      : timestamp instanceof Date
+        ? timestamp
+        : typeof timestamp === "string" || typeof timestamp === "number"
+          ? new Date(timestamp)
+        : null;
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const getLocalChatSessionKey = (userId) =>
+  `${CHAT_SESSION_STORAGE_PREFIX}${userId}`;
+
+const normalizeLocalSession = (session) => ({
+  id: String(session?.id || `local_${Date.now()}`),
+  title: String(session?.title || "Saved chat"),
+  preview: String(session?.preview || ""),
+  messages: normalizeChatMessages(session?.messages),
+  messageCount: Number(session?.messageCount || session?.messages?.length || 0),
+  createdAt: session?.createdAt || new Date().toISOString(),
+  updatedAt: session?.updatedAt || new Date().toISOString(),
+  storage: "local",
+});
+
+const loadLocalChatSessions = async (userId) => {
+  const rawSessions = await AsyncStorage.getItem(getLocalChatSessionKey(userId));
+  let parsedSessions = [];
+
+  try {
+    parsedSessions = rawSessions ? JSON.parse(rawSessions) : [];
+  } catch (_error) {
+    parsedSessions = [];
+  }
+
+  if (!Array.isArray(parsedSessions)) {
+    return [];
+  }
+
+  return parsedSessions
+    .map(normalizeLocalSession)
+    .sort(
+      (first, second) => new Date(second.updatedAt) - new Date(first.updatedAt)
+    );
+};
+
+const writeLocalChatSessions = async (userId, sessionsToStore) => {
+  await AsyncStorage.setItem(
+    getLocalChatSessionKey(userId),
+    JSON.stringify(sessionsToStore)
+  );
+};
+
+const saveLocalChatSession = async (userId, sessionData, sessionId = null) => {
+  const savedSessions = await loadLocalChatSessions(userId);
+  const messages = normalizeChatMessages(sessionData?.messages);
+  const title = String(sessionData?.title || "").trim() || buildSessionTitle(messages);
+  const safeSessionId =
+    String(sessionId || "").trim() ||
+    `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const existingSession = savedSessions.find((item) => item.id === safeSessionId);
+  const lastUserMessage = [...messages].reverse().find((item) => item.role === "user");
+  const now = new Date().toISOString();
+  const nextSession = {
+    id: safeSessionId,
+    title,
+    preview: String(
+      lastUserMessage?.content || messages[messages.length - 1]?.content || ""
+    ).slice(0, 160),
+    messages,
+    messageCount: messages.length,
+    createdAt: existingSession?.createdAt || now,
+    updatedAt: now,
+    storage: "local",
+  };
+  const nextSessions = [
+    nextSession,
+    ...savedSessions.filter((item) => item.id !== safeSessionId),
+  ].slice(0, 20);
+
+  await writeLocalChatSessions(userId, nextSessions);
+  return safeSessionId;
+};
+
+const deleteLocalChatSession = async (userId, sessionId) => {
+  const savedSessions = await loadLocalChatSessions(userId);
+  await writeLocalChatSessions(
+    userId,
+    savedSessions.filter((item) => item.id !== sessionId)
+  );
+};
+
+const getSessionStorage = (session) => session?.storage || "cloud";
+
+const toLocalDateKey = (date) => {
+  const value = date instanceof Date ? date : new Date(date);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const buildWeatherPayload = ({ weather, forecast, rawForecast, currentCity }) => {
+  if (!weather && (!Array.isArray(rawForecast) || rawForecast.length === 0)) {
+    return null;
+  }
+
+  const currentWeather = weather?.weather?.[0] || {};
+  const currentDate = weather?.dt ? new Date(weather.dt * 1000) : new Date();
+
+  return {
+    source: "OpenWeather",
+    city: currentCity || weather?.name || "",
+    todayKey: toLocalDateKey(new Date()),
+    current: weather
+      ? {
+          observedAt: currentDate.toISOString(),
+          dateKey: toLocalDateKey(currentDate),
+          tempC: weather?.main?.temp,
+          feelsLikeC: weather?.main?.feels_like,
+          humidity: weather?.main?.humidity,
+          condition: currentWeather.main || "",
+          description: currentWeather.description || "",
+          windSpeed: weather?.wind?.speed,
+          rainMm:
+            Number(weather?.rain?.["1h"] || 0) ||
+            Number(weather?.rain?.["3h"] || 0),
+        }
+      : null,
+    daily: Array.isArray(forecast) ? forecast.slice(0, 5) : [],
+    hourly: Array.isArray(rawForecast)
+      ? rawForecast.slice(0, 16).map((entry) => {
+          const entryDate = new Date(entry.dt * 1000);
+          const entryWeather = entry.weather?.[0] || {};
+
+          return {
+            time: entryDate.toISOString(),
+            dateKey: toLocalDateKey(entryDate),
+            timeLabel: entryDate.toLocaleTimeString(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            }),
+            tempC: entry.main?.temp,
+            humidity: entry.main?.humidity,
+            condition: entryWeather.main || "",
+            description: entryWeather.description || "",
+            pop: Number(entry.pop || 0),
+            rainMm:
+              Number(entry.rain?.["3h"] || 0) ||
+              Number(entry.rain?.["1h"] || 0),
+          };
+        })
+      : [],
+  };
+};
 
 const ChatbotScreen = () => {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
+  const { weather, forecast, rawForecast, currentCity } =
+    useContext(WeatherContext);
   const initialWindowHeightRef = useRef(Dimensions.get("window").height);
   const [loading, setLoading] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [keyboardOffset, setKeyboardOffset] = useState(0);
-  const [chatHistory, setChatHistory] = useState([
-    {
-      role: "ai",
-      content:
-        "Assalam o Alaikum! Mein AgriAssist hoon, aapka agricultural advisor. Aap kaise hain, aur mein aapki kheti-baari mein kya madad kar sakta hoon?",
-    },
-  ]);
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [activeSessionStorage, setActiveSessionStorage] = useState(null);
+  const [chatHistory, setChatHistory] = useState(() => createInitialHistory());
   const scrollViewRef = useRef();
+  const initializedSessionsRef = useRef(false);
+
+  const refreshSessions = useCallback(async ({ openLatest = false } = {}) => {
+    const userId = auth.currentUser?.uid;
+
+    if (!userId) {
+      setSessions([]);
+      return;
+    }
+
+    setSessionsLoading(true);
+
+    try {
+      const savedSessions = (await getChatSessions(userId)).map((item) => ({
+        ...item,
+        storage: "cloud",
+      }));
+      setSessions(savedSessions);
+
+      if (openLatest && savedSessions.length > 0) {
+        setActiveSessionId(savedSessions[0].id);
+        setActiveSessionStorage(getSessionStorage(savedSessions[0]));
+        setChatHistory(normalizeChatMessages(savedSessions[0].messages));
+      }
+    } catch (_err) {
+      const localSessions = await loadLocalChatSessions(userId);
+      setSessions(localSessions);
+
+      if (openLatest && localSessions.length > 0) {
+        setActiveSessionId(localSessions[0].id);
+        setActiveSessionStorage("local");
+        setChatHistory(normalizeChatMessages(localSessions[0].messages));
+      }
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, []);
+
+  const persistChatSession = useCallback(
+    async (
+      messagesToSave,
+      sessionId = activeSessionId,
+      sessionStorage = activeSessionStorage
+    ) => {
+      const userId = auth.currentUser?.uid;
+
+      if (!userId || !messagesToSave.some((item) => item.role === "user")) {
+        return sessionId;
+      }
+
+      const sessionPayload = {
+        title: buildSessionTitle(messagesToSave),
+        messages: messagesToSave,
+      };
+
+      if (sessionStorage === "local") {
+        const savedSessionId = await saveLocalChatSession(
+          userId,
+          sessionPayload,
+          sessionId
+        );
+        setActiveSessionId(savedSessionId);
+        setActiveSessionStorage("local");
+        setSessions(await loadLocalChatSessions(userId));
+        return savedSessionId;
+      }
+
+      let savedSessionId = sessionId;
+      let savedSessions = [];
+
+      try {
+        savedSessionId = await saveChatSession(userId, sessionPayload, sessionId);
+        savedSessions = (await getChatSessions(userId)).map((item) => ({
+          ...item,
+          storage: "cloud",
+        }));
+        setActiveSessionStorage("cloud");
+      } catch (_error) {
+        savedSessionId = await saveLocalChatSession(
+          userId,
+          sessionPayload,
+          String(sessionId || "").startsWith("local_") ? sessionId : null
+        );
+        savedSessions = await loadLocalChatSessions(userId);
+        setActiveSessionStorage("local");
+      }
+
+      setActiveSessionId(savedSessionId);
+      setSessions(savedSessions);
+
+      return savedSessionId;
+    },
+    [activeSessionId, activeSessionStorage]
+  );
+
+  const handleNewChat = () => {
+    if (loading) {
+      return;
+    }
+
+    setActiveSessionId(null);
+    setActiveSessionStorage(null);
+    setChatHistory(createInitialHistory());
+    setMessage("");
+    setError("");
+  };
+
+  const handleSelectSession = async (session) => {
+    if (loading || session.id === activeSessionId) {
+      return;
+    }
+
+    const userId = auth.currentUser?.uid;
+    setError("");
+
+    try {
+      const sessionStorage = getSessionStorage(session);
+      const selectedSession =
+        userId && sessionStorage === "cloud"
+          ? await getChatSession(userId, session.id)
+          : session;
+
+      setActiveSessionId(session.id);
+      setActiveSessionStorage(sessionStorage);
+      setChatHistory(
+        normalizeChatMessages(selectedSession?.messages || session.messages)
+      );
+    } catch (_err) {
+      setError("Chat session open nahi ho saki. Please try again.");
+    }
+  };
+
+  const deleteActiveSession = async () => {
+    const userId = auth.currentUser?.uid;
+
+    if (!userId || !activeSessionId) {
+      return;
+    }
+
+    try {
+      if (activeSessionStorage === "local") {
+        await deleteLocalChatSession(userId, activeSessionId);
+      } else {
+        await deleteChatSession(userId, activeSessionId);
+      }
+
+      setActiveSessionId(null);
+      setActiveSessionStorage(null);
+      setChatHistory(createInitialHistory());
+      setMessage("");
+      setError("");
+      await refreshSessions();
+    } catch (_err) {
+      setError("Chat session delete nahi ho saki. Please try again.");
+    }
+  };
+
+  const handleDeleteSession = () => {
+    if (loading || !activeSessionId) {
+      return;
+    }
+
+    Alert.alert("Delete chat", "Remove this saved chat session?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: deleteActiveSession,
+      },
+    ]);
+  };
 
   const handleSend = async () => {
     if (!message.trim()) {
@@ -55,7 +447,6 @@ const ChatbotScreen = () => {
     setMessage("");
     setError("");
 
-    // Add user message to history
     const updatedHistory = [
       ...chatHistory,
       { role: "user", content: userMessage },
@@ -63,9 +454,25 @@ const ChatbotScreen = () => {
     setChatHistory(updatedHistory);
     setLoading(true);
 
+    let historyToStore = updatedHistory;
+    const weatherPayload = buildWeatherPayload({
+      weather,
+      forecast,
+      rawForecast,
+      currentCity,
+    });
+
     try {
       const requestHistory = updatedHistory
-        .slice(1, -1)
+        .slice(0, -1)
+        .filter(
+          (item, index) =>
+            !(
+              index === 0 &&
+              item.role === WELCOME_MESSAGE.role &&
+              item.content === WELCOME_MESSAGE.content
+            )
+        )
         .slice(-8)
         .map(({ role, content }) => ({ role, content }));
 
@@ -76,8 +483,10 @@ const ChatbotScreen = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          userId: auth.currentUser?.uid,
           message: userMessage,
           history: requestHistory,
+          weather: weatherPayload,
         }),
       });
 
@@ -86,23 +495,38 @@ const ChatbotScreen = () => {
       }
 
       const data = await response.json();
-
-      setChatHistory((prev) => [
-        ...prev,
+      historyToStore = [
+        ...updatedHistory,
         {
           role: "ai",
           content:
             data.reply ||
             "Maaf kijiye, mujhe is sawal ka jawab nahi mil saka.",
         },
-      ]);
-    } catch (err) {
-      console.error(err);
+      ];
+
+      setChatHistory(historyToStore);
+    } catch (_err) {
       setError("Maaf kijiye, abhi response nahi mil saka. Please try again.");
     } finally {
-      setLoading(false);
+      try {
+        await persistChatSession(historyToStore);
+      } catch (_saveError) {
+        setError((prev) => prev || "Chat session save nahi ho saki. Please try again.");
+      } finally {
+        setLoading(false);
+      }
     }
   };
+
+  useEffect(() => {
+    if (initializedSessionsRef.current) {
+      return;
+    }
+
+    initializedSessionsRef.current = true;
+    refreshSessions({ openLatest: true });
+  }, [refreshSessions]);
 
   useEffect(() => {
     setTimeout(() => {
@@ -152,10 +576,114 @@ const ChatbotScreen = () => {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
           >
-            <Text style={styles.title}>Agri Chatbot</Text>
-            <Text style={styles.subtitle}>
-              Aapka ziraati mahir. Sawaal puchiye.
-            </Text>
+            <View style={styles.headerRow}>
+              <View style={styles.headerCopy}>
+                <Text style={styles.title}>Agri Chatbot</Text>
+                <Text style={styles.subtitle}>
+                  Aapka ziraati mahir. Sawaal puchiye.
+                </Text>
+              </View>
+
+              <View style={styles.headerActions}>
+                <Pressable
+                  style={[
+                    styles.newChatButton,
+                    loading && styles.actionButtonDisabled,
+                  ]}
+                  onPress={handleNewChat}
+                  disabled={loading}
+                  accessibilityLabel="Start new chat"
+                >
+                  <Ionicons
+                    name="add"
+                    size={18}
+                    color={theme.colors.surface}
+                  />
+                  <Text style={styles.newChatButtonText}>New</Text>
+                </Pressable>
+
+                {activeSessionId ? (
+                  <Pressable
+                    style={[
+                      styles.deleteSessionButton,
+                      loading && styles.actionButtonDisabled,
+                    ]}
+                    onPress={handleDeleteSession}
+                    disabled={loading}
+                    accessibilityLabel="Delete current chat"
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={19}
+                      color={theme.colors.error}
+                    />
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+
+            {sessions.length > 0 || sessionsLoading ? (
+              <View style={styles.sessionsBlock}>
+                <View style={styles.sessionsHeader}>
+                  <Text style={styles.sessionsLabel}>Sessions</Text>
+                  {sessionsLoading ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.colors.primary}
+                    />
+                  ) : null}
+                </View>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.sessionListContent}
+                >
+                  {sessions.map((item) => {
+                    const isActive = item.id === activeSessionId;
+                    const messageCount = Number(item.messageCount || 0);
+                    const sessionMeta =
+                      formatSessionDate(item.updatedAt) ||
+                      `${messageCount} ${
+                        messageCount === 1 ? "message" : "messages"
+                      }`;
+
+                    return (
+                      <Pressable
+                        key={item.id}
+                        style={[
+                          styles.sessionChip,
+                          isActive && styles.sessionChipActive,
+                          loading && styles.sessionChipDisabled,
+                        ]}
+                        onPress={() => handleSelectSession(item)}
+                        disabled={loading}
+                      >
+                        <Text
+                          style={[
+                            styles.sessionTitle,
+                            isActive && styles.sessionTitleActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.title || "Saved chat"}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.sessionMeta,
+                            isActive && styles.sessionMetaActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {sessionMeta}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : null}
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -281,6 +809,22 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.lg,
     flexGrow: 1,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  headerCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
   title: {
     color: theme.colors.text,
     fontSize: theme.fontSize.xl,
@@ -290,7 +834,85 @@ const styles = StyleSheet.create({
   subtitle: {
     color: theme.colors.textSecondary,
     fontSize: theme.fontSize.sm,
+  },
+  newChatButton: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: theme.spacing.sm,
+  },
+  newChatButtonText: {
+    color: theme.colors.surface,
+    fontSize: theme.fontSize.sm,
+    fontWeight: "700",
+  },
+  deleteSessionButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1,
+  },
+  actionButtonDisabled: {
+    opacity: 0.55,
+  },
+  sessionsBlock: {
     marginBottom: theme.spacing.md,
+  },
+  sessionsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: theme.spacing.sm,
+  },
+  sessionsLabel: {
+    color: theme.colors.text,
+    fontSize: theme.fontSize.sm,
+    fontWeight: "700",
+  },
+  sessionListContent: {
+    paddingRight: theme.spacing.md,
+  },
+  sessionChip: {
+    width: 160,
+    minHeight: 58,
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1,
+    marginRight: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+  },
+  sessionChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  sessionChipDisabled: {
+    opacity: 0.7,
+  },
+  sessionTitle: {
+    color: theme.colors.text,
+    fontSize: theme.fontSize.sm,
+    fontWeight: "700",
+    marginBottom: theme.spacing.xs,
+  },
+  sessionTitleActive: {
+    color: theme.colors.surface,
+  },
+  sessionMeta: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.xs,
+  },
+  sessionMetaActive: {
+    color: "#E8F5E9",
   },
   errorText: {
     color: theme.colors.error,

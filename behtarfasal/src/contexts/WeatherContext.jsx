@@ -13,6 +13,7 @@ export const WeatherContext = createContext();
 export const WeatherProvider = ({ children }) => {
   const [weather, setWeather] = useState(null);
   const [forecast, setForecast] = useState([]);
+  const [rawForecast, setRawForecast] = useState([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
   const [currentCity, setCurrentCity] = useState('');
@@ -21,6 +22,10 @@ export const WeatherProvider = ({ children }) => {
     setWeather(weatherData);
     if (forecastData) {
       setForecast(buildDailyForecast(forecastData));
+      setRawForecast(Array.isArray(forecastData?.list) ? forecastData.list : []);
+    } else {
+      setForecast([]);
+      setRawForecast([]);
     }
     if (weatherData?.name) {
       setCurrentCity(weatherData.name);
@@ -48,6 +53,7 @@ export const WeatherProvider = ({ children }) => {
       setWeatherError(err.message || 'Unable to fetch weather data.');
       setWeather(null);
       setForecast([]);
+      setRawForecast([]);
     } finally {
       setWeatherLoading(false);
     }
@@ -68,6 +74,7 @@ export const WeatherProvider = ({ children }) => {
         setWeatherError(err.message || 'Unable to fetch weather data.');
         setWeather(null);
         setForecast([]);
+        setRawForecast([]);
       } finally {
         setWeatherLoading(false);
       }
@@ -91,7 +98,7 @@ export const WeatherProvider = ({ children }) => {
         }
 
         await fetchWeatherByCity('Lahore');
-      } catch (err) {
+      } catch (_err) {
         try {
           await fetchWeatherByCity('Lahore');
         } catch (fallbackError) {
@@ -110,6 +117,7 @@ export const WeatherProvider = ({ children }) => {
       value={{
         weather,
         forecast,
+        rawForecast,
         weatherLoading,
         weatherError,
         currentCity,
