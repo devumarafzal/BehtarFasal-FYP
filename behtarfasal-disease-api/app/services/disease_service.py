@@ -1,6 +1,4 @@
 import logging
-import os
-from pathlib import Path
 from typing import Dict, List
 
 import torch
@@ -18,8 +16,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_DIR = Path(__file__).resolve().parent.parent / "ml" / "disease_model"
-MODEL_DIR = Path(os.getenv("DISEASE_MODEL_DIR", str(DEFAULT_MODEL_DIR)))
+# Auto-downloads from HuggingFace Hub at container startup instead of loading
+# from a local folder. Avoids Git/Git-LFS file corruption issues entirely —
+# the model is fetched fresh from HF's CDN and cached for this container's lifetime.
+MODEL_ID = "linkanjarad/mobilenet_v2_1.0_224-plant-disease-identification"
 
 
 class DiseaseService:
@@ -36,20 +36,16 @@ class DiseaseService:
         self._load_model()
 
     def _load_model(self) -> None:
-        if not MODEL_DIR.exists():
-            logger.error("Disease model folder not found at %s", MODEL_DIR)
-            self.model_loaded = False
-            return
-
         try:
-            self.processor = IMAGE_PROCESSOR.from_pretrained(str(MODEL_DIR))
-            self.model = AutoModelForImageClassification.from_pretrained(str(MODEL_DIR))
+            logger.info("Downloading disease model from HuggingFace: %s", MODEL_ID)
+            self.processor = IMAGE_PROCESSOR.from_pretrained(MODEL_ID)
+            self.model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
             self.model.to(self.device)
             self.model.eval()
             self.id2label = self.model.config.id2label or {}
             self.num_labels = len(self.id2label)
             self.model_loaded = True
-            logger.info("Disease model loaded successfully from %s", MODEL_DIR)
+            logger.info("Disease model loaded successfully from HuggingFace (%s classes)", self.num_labels)
         except Exception as exc:
             logger.exception("Failed to load disease model: %s", exc)
             self.model_loaded = False
