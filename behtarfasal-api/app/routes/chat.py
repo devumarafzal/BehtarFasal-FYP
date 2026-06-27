@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.models.chat_model import ChatRequest, ChatResponse, ChatTranscribeResponse
 from app.services.chat_service import process_chat_message
-from app.services.gemini_service import transcribe_audio
+from app.services.gemini_service import GeminiTranscriptionError, transcribe_audio
 
 router = APIRouter(prefix="/chat", tags=["Chatbot"])
 logger = logging.getLogger(__name__)
@@ -17,6 +17,7 @@ SUPPORTED_AUDIO_TYPES = {
     "audio/ogg",
     "audio/wav",
     "audio/webm",
+    "audio/x-m4a",
     "video/mp4",
 }
 
@@ -54,6 +55,12 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
 
     try:
         transcript = await transcribe_audio(audio_bytes, content_type)
+    except GeminiTranscriptionError as e:
+        logger.error("Gemini transcription provider error: %s", str(e))
+        raise HTTPException(
+            status_code=502,
+            detail=f"Voice transcription service error: {str(e)}",
+        )
     except Exception as e:
         logger.exception("Transcription error: %s", str(e))
         raise HTTPException(status_code=500, detail="Could not transcribe audio.")

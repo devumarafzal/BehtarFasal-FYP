@@ -14,6 +14,10 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 
+class GeminiTranscriptionError(RuntimeError):
+    """Raised when audio transcription fails before Gemini returns a transcript."""
+
+
 def _sanitize_log_text(value: object) -> str:
     text = str(value)
     text = re.sub(r"key=([^&\s\"']+)", "key=[REDACTED]", text)
@@ -277,8 +281,10 @@ def _upload_and_transcribe_audio(audio_bytes: bytes, mime_type: str, model_name:
 
     suffix = {
         "audio/3gpp": ".3gp",
+        "audio/aac": ".m4a",
         "audio/mp4": ".m4a",
         "audio/m4a": ".m4a",
+        "audio/x-m4a": ".m4a",
         "audio/webm": ".webm",
         "audio/wav": ".wav",
     }.get(mime_type, ".m4a")
@@ -377,7 +383,9 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
 async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
     """Transcribe a short farmer voice note using Gemini audio input."""
     if not GEMINI_API_KEY:
-        return ""
+        raise GeminiTranscriptionError("Gemini API key is not configured.")
+
+    failures: List[str] = []
 
     for model_name in _candidate_models():
         try:
@@ -392,8 +400,15 @@ async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
                 return transcript
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="ignore")
+            failure = f"{model_name}: HTTP {e.code} {_sanitize_log_text(detail)}"
+            failures.append(failure)
             logger.warning("Gemini transcription model %s failed: %s %s", model_name, e.code, _sanitize_log_text(detail))
         except Exception as e:
+            failure = f"{model_name}: {_sanitize_log_text(e)}"
+            failures.append(failure)
             logger.warning("Gemini transcription model %s failed: %s", model_name, _sanitize_log_text(e))
+
+    if failures:
+        raise GeminiTranscriptionError(failures[-1])
 
     return ""

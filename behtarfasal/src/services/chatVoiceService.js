@@ -17,7 +17,7 @@ const getAudioFileMeta = (uri) => {
     return { name: "voice-message.wav", type: "audio/wav" };
   }
 
-  return { name: "voice-message.m4a", type: "audio/mp4" };
+  return { name: "voice-message.m4a", type: "audio/aac" };
 };
 
 export const transcribeVoiceMessage = async (uri) => {
