@@ -13,6 +13,14 @@ from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
+
+def _sanitize_log_text(value: object) -> str:
+    text = str(value)
+    text = re.sub(r"key=([^&\s\"']+)", "key=[REDACTED]", text)
+    text = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "AIza[REDACTED]", text)
+    text = re.sub(r"AQ\.[0-9A-Za-z_.-]{20,}", "AQ.[REDACTED]", text)
+    return text
+
 try:
     import google.generativeai as genai
 except ImportError:
@@ -352,17 +360,17 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
                 return response.text
             except urllib.error.HTTPError as e:
                 detail = e.read().decode("utf-8", errors="ignore")
-                logger.warning("Gemini model %s failed: %s %s", model_name, e.code, detail)
+                logger.warning("Gemini model %s failed: %s %s", model_name, e.code, _sanitize_log_text(detail))
             except Exception as e:
-                logger.warning("Gemini model %s failed: %s", model_name, str(e))
+                logger.warning("Gemini model %s failed: %s", model_name, _sanitize_log_text(e))
 
         return "Maaf kijiye, Gemini API se jawab nahi aa saka. (System Error)"
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="ignore")
-        logger.error("Gemini REST API error: %s %s", e.code, detail)
+        logger.error("Gemini REST API error: %s %s", e.code, _sanitize_log_text(detail))
         return "Maaf kijiye, Gemini API se jawab nahi aa saka. (System Error)"
     except Exception as e:
-        logger.error(f"Gemini API error: {str(e)}")
+        logger.error("Gemini API error: %s", _sanitize_log_text(e))
         return "Maaf kijiye, technical masle ki wajah se mein abhi jawab nahi de sakta. (System Error)"
 
 
@@ -384,8 +392,8 @@ async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
                 return transcript
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="ignore")
-            logger.warning("Gemini transcription model %s failed: %s %s", model_name, e.code, detail)
+            logger.warning("Gemini transcription model %s failed: %s %s", model_name, e.code, _sanitize_log_text(detail))
         except Exception as e:
-            logger.warning("Gemini transcription model %s failed: %s", model_name, str(e))
+            logger.warning("Gemini transcription model %s failed: %s", model_name, _sanitize_log_text(e))
 
     return ""
