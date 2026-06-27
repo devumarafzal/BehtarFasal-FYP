@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -75,10 +76,11 @@ GEMINI_FALLBACK_MODELS = [
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 TRANSCRIPTION_PROMPT = """
-Transcribe this farmer voice note into plain text.
-The speech may be Roman Urdu, Urdu, Punjabi, Hindi, or English about farming.
-Return only the transcript. Do not translate, explain, add punctuation that changes meaning, or add markdown.
-If no clear speech is present, return an empty string.
+Listen carefully and transcribe this farmer voice note into plain text.
+The speech may be Roman Urdu, Urdu, Punjabi, Saraiki, Hindi, or English about farming.
+Return only the best-effort transcript. Do not translate, explain, add markdown, or add labels.
+If a few words are unclear, keep the clear words and approximate the unclear words from context.
+Return an empty string only when there is truly no human speech in the audio.
 """.strip()
 
 if GEMINI_API_KEY and genai:
@@ -282,6 +284,19 @@ def _upload_and_transcribe_audio(audio_bytes: bytes, mime_type: str, model_name:
             temp_path = temp_file.name
 
         uploaded_file = genai.upload_file(path=temp_path, mime_type=mime_type)
+
+        for _ in range(20):
+            state_name = getattr(getattr(uploaded_file, "state", None), "name", "")
+
+            if state_name == "ACTIVE":
+                break
+
+            if state_name == "FAILED":
+                raise RuntimeError("Gemini audio file processing failed")
+
+            time.sleep(0.5)
+            uploaded_file = genai.get_file(uploaded_file.name)
+
         model = genai.GenerativeModel(
             model_name=model_name,
             generation_config={
@@ -289,7 +304,7 @@ def _upload_and_transcribe_audio(audio_bytes: bytes, mime_type: str, model_name:
                 "max_output_tokens": 180,
             },
         )
-        response = model.generate_content([TRANSCRIPTION_PROMPT, uploaded_file])
+        response = model.generate_content([uploaded_file, TRANSCRIPTION_PROMPT])
         return (response.text or "").strip()
     finally:
         if uploaded_file:

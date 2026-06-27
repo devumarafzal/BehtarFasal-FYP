@@ -38,10 +38,12 @@ import { transcribeVoiceMessage } from "../../services/chatVoiceService";
 
 const API_BASE_URL = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
 const CHAT_SESSION_STORAGE_PREFIX = "@behtarfasal/chatSessions/";
-const MIN_VOICE_RECORDING_MS = 900;
+const MIN_VOICE_RECORDING_MS = 1500;
+const MIN_AUTO_STOP_RECORDING_MS = 2500;
 const MAX_VOICE_RECORDING_MS = 30000;
 const SILENCE_STOP_MS = 1400;
 const SILENCE_METERING_THRESHOLD = -45;
+const NO_METERING_AUTO_STOP_MS = 9000;
 
 const VOICE_RECORDING_OPTIONS = {
   ...RecordingPresets.HIGH_QUALITY,
@@ -240,8 +242,37 @@ const ChatbotScreen = () => {
   const initializedSessionsRef = useRef(false);
   const silenceStartedAtRef = useRef(null);
   const stopVoiceInputRef = useRef(null);
+  const recordingStartedAtRef = useRef(null);
+  const maxRecordingTimerRef = useRef(null);
+  const noMeteringTimerRef = useRef(null);
+
+  const clearVoiceTimers = useCallback(() => {
+    if (maxRecordingTimerRef.current) {
+      clearTimeout(maxRecordingTimerRef.current);
+      maxRecordingTimerRef.current = null;
+    }
+
+    if (noMeteringTimerRef.current) {
+      clearTimeout(noMeteringTimerRef.current);
+      noMeteringTimerRef.current = null;
+    }
+  }, []);
+
+  const getRecordingElapsedMs = useCallback(() => {
+    if (!recordingStartedAtRef.current) {
+      return 0;
+    }
+
+    return Date.now() - recordingStartedAtRef.current;
+  }, []);
 
   const getRecordingDurationMs = useCallback(() => {
+    const elapsedMs = getRecordingElapsedMs();
+
+    if (elapsedMs > 0) {
+      return elapsedMs;
+    }
+
     const status = audioRecorder.getStatus?.();
     const durationFromStatus =
       status?.durationMillis || status?.duration || status?.currentTime;
@@ -257,7 +288,7 @@ const ChatbotScreen = () => {
     }
 
     return 0;
-  }, [audioRecorder]);
+  }, [audioRecorder, getRecordingElapsedMs]);
 
   const startVoiceInput = useCallback(async () => {
     if (loading || voiceStatus !== "idle") {
@@ -278,15 +309,37 @@ const ChatbotScreen = () => {
         allowsRecording: true,
         playsInSilentMode: true,
       });
-      await audioRecorder.prepareToRecordAsync();
+      const status = audioRecorder.getStatus?.();
+
+      if (!status?.canRecord) {
+        await audioRecorder.prepareToRecordAsync();
+      }
+
       audioRecorder.record();
       silenceStartedAtRef.current = null;
+      recordingStartedAtRef.current = Date.now();
+      clearVoiceTimers();
+      maxRecordingTimerRef.current = setTimeout(() => {
+        stopVoiceInputRef.current?.();
+      }, MAX_VOICE_RECORDING_MS);
+      noMeteringTimerRef.current = setTimeout(() => {
+        const currentStatus = audioRecorder.getStatus?.();
+
+        if (
+          currentStatus?.isRecording &&
+          typeof currentStatus?.metering !== "number"
+        ) {
+          stopVoiceInputRef.current?.();
+        }
+      }, NO_METERING_AUTO_STOP_MS);
       setVoiceStatus("recording");
     } catch (err) {
+      clearVoiceTimers();
+      recordingStartedAtRef.current = null;
       setVoiceStatus("idle");
       setError(err.message || "Voice recording start nahi ho saki.");
     }
-  }, [audioRecorder, loading, voiceStatus]);
+  }, [audioRecorder, clearVoiceTimers, loading, voiceStatus]);
 
   const stopVoiceInput = useCallback(
     async ({ shouldTranscribe = true } = {}) => {
@@ -296,7 +349,9 @@ const ChatbotScreen = () => {
 
       const durationMs = getRecordingDurationMs();
       setVoiceStatus(shouldTranscribe ? "transcribing" : "idle");
+      clearVoiceTimers();
       silenceStartedAtRef.current = null;
+      recordingStartedAtRef.current = null;
 
       try {
         await audioRecorder.stop();
@@ -316,6 +371,11 @@ const ChatbotScreen = () => {
           return;
         }
 
+        if (!recordingUri) {
+          setError("Recording save nahi ho saki. Mic dobara try karein.");
+          return;
+        }
+
         const transcript = await transcribeVoiceMessage(recordingUri);
         setMessage((currentMessage) => {
           const currentText = currentMessage.trim();
@@ -328,7 +388,13 @@ const ChatbotScreen = () => {
         setVoiceStatus("idle");
       }
     },
-    [audioRecorder, getRecordingDurationMs, recorderState.url, voiceStatus]
+    [
+      audioRecorder,
+      clearVoiceTimers,
+      getRecordingDurationMs,
+      recorderState.url,
+      voiceStatus,
+    ]
   );
 
   stopVoiceInputRef.current = stopVoiceInput;
@@ -595,14 +661,14 @@ const ChatbotScreen = () => {
       return;
     }
 
-    const durationMs = getRecordingDurationMs();
+    const durationMs = getRecordingElapsedMs();
 
     if (durationMs >= MAX_VOICE_RECORDING_MS) {
       stopVoiceInputRef.current?.();
       return;
     }
 
-    if (durationMs < MIN_VOICE_RECORDING_MS) {
+    if (durationMs < MIN_AUTO_STOP_RECORDING_MS) {
       return;
     }
 
@@ -629,6 +695,7 @@ const ChatbotScreen = () => {
       stopVoiceInputRef.current?.();
     }
   }, [
+    getRecordingElapsedMs,
     getRecordingDurationMs,
     recorderState.isRecording,
     recorderState.metering,
@@ -637,12 +704,13 @@ const ChatbotScreen = () => {
 
   useEffect(() => {
     return () => {
+      clearVoiceTimers();
       if (audioRecorder.isRecording) {
         audioRecorder.stop().catch(() => {});
       }
       setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };
-  }, [audioRecorder]);
+  }, [audioRecorder, clearVoiceTimers]);
 
   useEffect(() => {
     if (initializedSessionsRef.current) {
@@ -689,8 +757,12 @@ const ChatbotScreen = () => {
   const isRecordingVoice = voiceStatus === "recording";
   const isTranscribingVoice = voiceStatus === "transcribing";
   const voiceButtonDisabled = loading || isTranscribingVoice;
+  const voiceElapsedSeconds = Math.max(
+    0,
+    Math.floor(getRecordingElapsedMs() / 1000)
+  );
   const voiceHint = isRecordingVoice
-    ? "Listening... rukne par auto-stop ho jayega."
+    ? `Listening... ${voiceElapsedSeconds}s`
     : isTranscribingVoice
       ? "Voice ko text mein convert kar raha hai..."
       : "";

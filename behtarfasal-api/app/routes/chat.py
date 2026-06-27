@@ -45,6 +45,13 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
     if len(audio_bytes) > MAX_TRANSCRIPTION_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Audio file is too large.")
 
+    logger.info(
+        "Transcribing voice note: filename=%s content_type=%s size=%s",
+        file.filename,
+        content_type,
+        len(audio_bytes),
+    )
+
     try:
         transcript = await transcribe_audio(audio_bytes, content_type)
     except Exception as e:
@@ -52,6 +59,9 @@ async def transcribe_endpoint(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Could not transcribe audio.")
 
     if not transcript:
-        raise HTTPException(status_code=422, detail="No clear speech detected.")
+        raise HTTPException(
+            status_code=422,
+            detail="No clear speech detected. Please speak louder and try again.",
+        )
 
     return ChatTranscribeResponse(text=transcript)
