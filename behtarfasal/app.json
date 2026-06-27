@@ -39,10 +39,22 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow BehtarFasal to record voice questions for the chatbot."
+        }
       ]
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ae4bb856-04f6-440c-b91f-b7fcb467d4bc"
+      }
     }
   }
 }

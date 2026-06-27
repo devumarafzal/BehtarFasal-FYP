@@ -15,10 +15,16 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
-import Constants from "expo-constants";
 import { WeatherContext } from "../../contexts/WeatherContext";
 import { auth } from "../../firebase/config";
 import {
@@ -27,19 +33,26 @@ import {
   getChatSessions,
   saveChatSession,
 } from "../../firebase/firestore";
+import { getApiBaseUrl, getNetworkErrorMessage } from "../../services/apiConfig";
+import { transcribeVoiceMessage } from "../../services/chatVoiceService";
 
-// Dynamically get the IP address from Expo bundler if testing on a physical device
-const getApiUrl = () => {
-  const debuggerHost = Constants.expoConfig?.hostUri;
-  if (debuggerHost) {
-    const ip = debuggerHost.split(":")[0];
-    return `http://${ip}:8000`;
-  }
-  return "http://10.0.2.2:8000";
-};
-
-const API_BASE_URL = getApiUrl();
+const API_BASE_URL = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
 const CHAT_SESSION_STORAGE_PREFIX = "@behtarfasal/chatSessions/";
+const MIN_VOICE_RECORDING_MS = 900;
+const MAX_VOICE_RECORDING_MS = 30000;
+const SILENCE_STOP_MS = 1400;
+const SILENCE_METERING_THRESHOLD = -45;
+
+const VOICE_RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  numberOfChannels: 1,
+  bitRate: 64000,
+  isMeteringEnabled: true,
+  android: {
+    ...RecordingPresets.HIGH_QUALITY.android,
+    audioSource: "voice_recognition",
+  },
+};
 
 const WELCOME_MESSAGE = {
   role: "ai",
@@ -211,9 +224,12 @@ const ChatbotScreen = () => {
   const insets = useSafeAreaInsets();
   const { weather, forecast, rawForecast, currentCity } =
     useContext(WeatherContext);
+  const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
+  const recorderState = useAudioRecorderState(audioRecorder, 250);
   const initialWindowHeightRef = useRef(Dimensions.get("window").height);
   const [loading, setLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("idle");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -222,6 +238,100 @@ const ChatbotScreen = () => {
   const [chatHistory, setChatHistory] = useState(() => createInitialHistory());
   const scrollViewRef = useRef();
   const initializedSessionsRef = useRef(false);
+  const silenceStartedAtRef = useRef(null);
+  const stopVoiceInputRef = useRef(null);
+
+  const getRecordingDurationMs = useCallback(() => {
+    const status = audioRecorder.getStatus?.();
+    const durationFromStatus =
+      status?.durationMillis || status?.duration || status?.currentTime;
+
+    if (typeof durationFromStatus === "number") {
+      return durationFromStatus > 1000
+        ? durationFromStatus
+        : durationFromStatus * 1000;
+    }
+
+    if (typeof audioRecorder.currentTime === "number") {
+      return audioRecorder.currentTime * 1000;
+    }
+
+    return 0;
+  }, [audioRecorder]);
+
+  const startVoiceInput = useCallback(async () => {
+    if (loading || voiceStatus !== "idle") {
+      return;
+    }
+
+    setError("");
+
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+
+      if (!permission.granted) {
+        setError("Microphone permission required hai voice message ke liye.");
+        return;
+      }
+
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      silenceStartedAtRef.current = null;
+      setVoiceStatus("recording");
+    } catch (err) {
+      setVoiceStatus("idle");
+      setError(err.message || "Voice recording start nahi ho saki.");
+    }
+  }, [audioRecorder, loading, voiceStatus]);
+
+  const stopVoiceInput = useCallback(
+    async ({ shouldTranscribe = true } = {}) => {
+      if (voiceStatus !== "recording") {
+        return;
+      }
+
+      const durationMs = getRecordingDurationMs();
+      setVoiceStatus(shouldTranscribe ? "transcribing" : "idle");
+      silenceStartedAtRef.current = null;
+
+      try {
+        await audioRecorder.stop();
+        await setAudioModeAsync({ allowsRecording: false });
+
+        const recordingUri =
+          audioRecorder.uri ||
+          audioRecorder.getStatus?.()?.url ||
+          recorderState.url;
+
+        if (!shouldTranscribe) {
+          return;
+        }
+
+        if (durationMs < MIN_VOICE_RECORDING_MS) {
+          setError("Thora lamba bol kar try karein.");
+          return;
+        }
+
+        const transcript = await transcribeVoiceMessage(recordingUri);
+        setMessage((currentMessage) => {
+          const currentText = currentMessage.trim();
+          return currentText ? `${currentText} ${transcript}` : transcript;
+        });
+        setError("");
+      } catch (err) {
+        setError(err.message || "Voice text mein convert nahi ho saki.");
+      } finally {
+        setVoiceStatus("idle");
+      }
+    },
+    [audioRecorder, getRecordingDurationMs, recorderState.url, voiceStatus]
+  );
+
+  stopVoiceInputRef.current = stopVoiceInput;
 
   const migrateLocalChatSessionsToCloud = useCallback(async (userId) => {
     const localSessions = await loadLocalChatSessions(userId);
@@ -422,19 +532,25 @@ const ChatbotScreen = () => {
         .slice(-8)
         .map(({ role, content }) => ({ role, content }));
 
-      const url = `${API_BASE_URL || "http://10.0.2.2:8000"}/chat/`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: auth.currentUser?.uid,
-          message: userMessage,
-          history: requestHistory,
-          weather: weatherPayload,
-        }),
-      });
+      const url = `${API_BASE_URL}/chat/`;
+      let response;
+
+      try {
+        response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId: auth.currentUser?.uid,
+            message: userMessage,
+            history: requestHistory,
+            weather: weatherPayload,
+          }),
+        });
+      } catch (_networkError) {
+        throw new Error(getNetworkErrorMessage("Chatbot", API_BASE_URL));
+      }
 
       if (!response.ok) {
         throw new Error("Network response was not ok");
@@ -452,8 +568,11 @@ const ChatbotScreen = () => {
       ];
 
       setChatHistory(historyToStore);
-    } catch (_err) {
-      setError("Maaf kijiye, abhi response nahi mil saka. Please try again.");
+    } catch (err) {
+      setError(
+        err.message ||
+          "Maaf kijiye, abhi response nahi mil saka. Please try again."
+      );
     } finally {
       try {
         await persistChatSession(historyToStore);
@@ -469,6 +588,61 @@ const ChatbotScreen = () => {
       }
     }
   };
+
+  useEffect(() => {
+    if (voiceStatus !== "recording" || !recorderState.isRecording) {
+      silenceStartedAtRef.current = null;
+      return;
+    }
+
+    const durationMs = getRecordingDurationMs();
+
+    if (durationMs >= MAX_VOICE_RECORDING_MS) {
+      stopVoiceInputRef.current?.();
+      return;
+    }
+
+    if (durationMs < MIN_VOICE_RECORDING_MS) {
+      return;
+    }
+
+    const metering = recorderState.metering;
+
+    if (typeof metering !== "number") {
+      return;
+    }
+
+    const isSilent = metering < SILENCE_METERING_THRESHOLD;
+    const now = Date.now();
+
+    if (!isSilent) {
+      silenceStartedAtRef.current = null;
+      return;
+    }
+
+    if (!silenceStartedAtRef.current) {
+      silenceStartedAtRef.current = now;
+      return;
+    }
+
+    if (now - silenceStartedAtRef.current >= SILENCE_STOP_MS) {
+      stopVoiceInputRef.current?.();
+    }
+  }, [
+    getRecordingDurationMs,
+    recorderState.isRecording,
+    recorderState.metering,
+    voiceStatus,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (audioRecorder.isRecording) {
+        audioRecorder.stop().catch(() => {});
+      }
+      setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    };
+  }, [audioRecorder]);
 
   useEffect(() => {
     if (initializedSessionsRef.current) {
@@ -511,6 +685,15 @@ const ChatbotScreen = () => {
       hideSubscription.remove();
     };
   }, []);
+
+  const isRecordingVoice = voiceStatus === "recording";
+  const isTranscribingVoice = voiceStatus === "transcribing";
+  const voiceButtonDisabled = loading || isTranscribingVoice;
+  const voiceHint = isRecordingVoice
+    ? "Listening... rukne par auto-stop ho jayega."
+    : isTranscribingVoice
+      ? "Voice ko text mein convert kar raha hai..."
+      : "";
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right"]}>
@@ -637,6 +820,7 @@ const ChatbotScreen = () => {
             ) : null}
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {voiceHint ? <Text style={styles.voiceHintText}>{voiceHint}</Text> : null}
 
             {chatHistory.length === 1 && (
               <View style={styles.tipCard}>
@@ -700,13 +884,14 @@ const ChatbotScreen = () => {
             >
               <TextInput
                 style={styles.input}
-                placeholder="Type your question"
+                placeholder={isRecordingVoice ? "Listening..." : "Type your question"}
                 placeholderTextColor={theme.colors.textSecondary}
                 keyboardType="default"
                 value={message}
                 multiline
                 maxLength={700}
                 returnKeyType="send"
+                editable={!isTranscribingVoice}
                 onChangeText={(value) => {
                   setMessage(value);
                   if (error) {
@@ -721,11 +906,42 @@ const ChatbotScreen = () => {
               />
               <Pressable
                 style={[
+                  styles.voiceButton,
+                  isRecordingVoice && styles.voiceButtonRecording,
+                  voiceButtonDisabled && styles.sendButtonDisabled,
+                ]}
+                onPress={
+                  isRecordingVoice
+                    ? () => stopVoiceInputRef.current?.()
+                    : startVoiceInput
+                }
+                disabled={voiceButtonDisabled}
+                accessibilityLabel={
+                  isRecordingVoice ? "Stop voice input" : "Start voice input"
+                }
+              >
+                {isTranscribingVoice ? (
+                  <ActivityIndicator color={theme.colors.primary} />
+                ) : (
+                  <Ionicons
+                    name={isRecordingVoice ? "stop" : "mic"}
+                    size={20}
+                    color={
+                      isRecordingVoice
+                        ? theme.colors.surface
+                        : theme.colors.primary
+                    }
+                  />
+                )}
+              </Pressable>
+              <Pressable
+                style={[
                   styles.sendButton,
-                  (loading || !message.trim()) && styles.sendButtonDisabled,
+                  (loading || isRecordingVoice || !message.trim()) &&
+                    styles.sendButtonDisabled,
                 ]}
                 onPress={handleSend}
-                disabled={loading || !message.trim()}
+                disabled={loading || isRecordingVoice || !message.trim()}
               >
                 {loading ? (
                   <ActivityIndicator color={theme.colors.surface} />
@@ -870,6 +1086,11 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm,
     marginBottom: theme.spacing.sm,
   },
+  voiceHintText: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.sm,
+    marginBottom: theme.spacing.sm,
+  },
   tipCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
@@ -937,7 +1158,7 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    padding: theme.spacing.md,
+    padding: theme.spacing.sm,
     backgroundColor: theme.colors.surface,
   },
   input: {
@@ -952,6 +1173,21 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.md,
     marginRight: theme.spacing.sm,
     maxHeight: 110,
+  },
+  voiceButton: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: theme.spacing.sm,
+  },
+  voiceButtonRecording: {
+    backgroundColor: theme.colors.error,
+    borderColor: theme.colors.error,
   },
   sendButton: {
     backgroundColor: theme.colors.primary,

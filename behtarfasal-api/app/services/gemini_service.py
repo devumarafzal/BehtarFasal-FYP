@@ -1,7 +1,9 @@
 import os
 import asyncio
+import base64
 import json
 import logging
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -71,6 +73,13 @@ GEMINI_FALLBACK_MODELS = [
     "gemini-2.0-flash-lite",
 ]
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+TRANSCRIPTION_PROMPT = """
+Transcribe this farmer voice note into plain text.
+The speech may be Roman Urdu, Urdu, Punjabi, Hindi, or English about farming.
+Return only the transcript. Do not translate, explain, add punctuation that changes meaning, or add markdown.
+If no clear speech is present, return an empty string.
+""".strip()
 
 if GEMINI_API_KEY and genai:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -212,6 +221,88 @@ def _send_gemini_rest(prompt: str, history: list, system_prompt: str, model_name
 
     return _extract_rest_text(response_payload)
 
+
+def _send_gemini_audio_rest(audio_bytes: bytes, mime_type: str, model_name: str) -> str:
+    model = urllib.parse.quote(model_name, safe="")
+    url = f"{GEMINI_API_URL.format(model=model)}?key={urllib.parse.quote(GEMINI_API_KEY)}"
+    body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": TRANSCRIPTION_PROMPT},
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": base64.b64encode(audio_bytes).decode("utf-8"),
+                        },
+                    },
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": 180,
+        },
+    }
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request, timeout=45) as response:
+        response_payload = json.loads(response.read().decode("utf-8"))
+
+    return _extract_rest_text(response_payload)
+
+
+def _upload_and_transcribe_audio(audio_bytes: bytes, mime_type: str, model_name: str) -> str:
+    if not genai:
+        return _send_gemini_audio_rest(audio_bytes, mime_type, model_name)
+
+    import tempfile
+
+    suffix = {
+        "audio/3gpp": ".3gp",
+        "audio/mp4": ".m4a",
+        "audio/m4a": ".m4a",
+        "audio/webm": ".webm",
+        "audio/wav": ".wav",
+    }.get(mime_type, ".m4a")
+
+    temp_path = None
+    uploaded_file = None
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_path = temp_file.name
+
+        uploaded_file = genai.upload_file(path=temp_path, mime_type=mime_type)
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            generation_config={
+                "temperature": 0,
+                "max_output_tokens": 180,
+            },
+        )
+        response = model.generate_content([TRANSCRIPTION_PROMPT, uploaded_file])
+        return (response.text or "").strip()
+    finally:
+        if uploaded_file:
+            try:
+                genai.delete_file(uploaded_file.name)
+            except Exception:
+                logger.debug("Could not delete Gemini uploaded transcription file", exc_info=True)
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                logger.debug("Could not delete temporary transcription file", exc_info=True)
+
 async def generate_gemini_response(prompt: str, history: list = None, system_prompt: str = SYSTEM_PROMPT) -> str:
     """Generate a real-time Gemini response."""
     if not GEMINI_API_KEY:
@@ -258,3 +349,28 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
     except Exception as e:
         logger.error(f"Gemini API error: {str(e)}")
         return "Maaf kijiye, technical masle ki wajah se mein abhi jawab nahi de sakta. (System Error)"
+
+
+async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
+    """Transcribe a short farmer voice note using Gemini audio input."""
+    if not GEMINI_API_KEY:
+        return ""
+
+    for model_name in _candidate_models():
+        try:
+            transcript = await asyncio.to_thread(
+                _upload_and_transcribe_audio,
+                audio_bytes,
+                mime_type,
+                model_name,
+            )
+            transcript = re.sub(r"\s+", " ", transcript or "").strip()
+            if transcript:
+                return transcript
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="ignore")
+            logger.warning("Gemini transcription model %s failed: %s %s", model_name, e.code, detail)
+        except Exception as e:
+            logger.warning("Gemini transcription model %s failed: %s", model_name, str(e))
+
+    return ""
