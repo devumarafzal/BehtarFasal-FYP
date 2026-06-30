@@ -15,13 +15,6 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  useAudioRecorder,
-  useAudioRecorderState,
-} from "expo-audio";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
@@ -34,7 +27,6 @@ import {
   saveChatSession,
 } from "../../firebase/firestore";
 import { getApiBaseUrl, getNetworkErrorMessage } from "../../services/apiConfig";
-import { transcribeVoiceMessage } from "../../services/chatVoiceService";
 
 let ExpoSpeechRecognitionModule = null;
 
@@ -47,23 +39,7 @@ try {
 
 const API_BASE_URL = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
 const CHAT_SESSION_STORAGE_PREFIX = "@behtarfasal/chatSessions/";
-const MIN_VOICE_RECORDING_MS = 1500;
-const MIN_AUTO_STOP_RECORDING_MS = 2500;
 const MAX_VOICE_RECORDING_MS = 30000;
-const SILENCE_STOP_MS = 1400;
-const SILENCE_METERING_THRESHOLD = -45;
-const NO_METERING_AUTO_STOP_MS = 9000;
-
-const VOICE_RECORDING_OPTIONS = {
-  ...RecordingPresets.HIGH_QUALITY,
-  numberOfChannels: 1,
-  bitRate: 64000,
-  isMeteringEnabled: true,
-  android: {
-    ...RecordingPresets.HIGH_QUALITY.android,
-    audioSource: "voice_recognition",
-  },
-};
 
 const SPEECH_RECOGNITION_CONTEXT = [
   "gandum",
@@ -253,8 +229,6 @@ const ChatbotScreen = () => {
   const insets = useSafeAreaInsets();
   const { weather, forecast, rawForecast, currentCity } =
     useContext(WeatherContext);
-  const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
-  const recorderState = useAudioRecorderState(audioRecorder, 250);
   const initialWindowHeightRef = useRef(Dimensions.get("window").height);
   const [loading, setLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -267,28 +241,19 @@ const ChatbotScreen = () => {
   const [chatHistory, setChatHistory] = useState(() => createInitialHistory());
   const scrollViewRef = useRef();
   const initializedSessionsRef = useRef(false);
-  const silenceStartedAtRef = useRef(null);
   const stopVoiceInputRef = useRef(null);
-  const sendMessageRef = useRef(null);
   const messageRef = useRef("");
   const voiceModeRef = useRef("idle");
   const speechTranscriptRef = useRef("");
   const speechHadErrorRef = useRef(false);
-  const speechSubmittedRef = useRef(false);
   const speechStopRequestedRef = useRef(false);
   const recordingStartedAtRef = useRef(null);
   const maxRecordingTimerRef = useRef(null);
-  const noMeteringTimerRef = useRef(null);
 
   const clearVoiceTimers = useCallback(() => {
     if (maxRecordingTimerRef.current) {
       clearTimeout(maxRecordingTimerRef.current);
       maxRecordingTimerRef.current = null;
-    }
-
-    if (noMeteringTimerRef.current) {
-      clearTimeout(noMeteringTimerRef.current);
-      noMeteringTimerRef.current = null;
     }
   }, []);
 
@@ -300,50 +265,49 @@ const ChatbotScreen = () => {
     return Date.now() - recordingStartedAtRef.current;
   }, []);
 
-  const getRecordingDurationMs = useCallback(() => {
-    const elapsedMs = getRecordingElapsedMs();
-
-    if (elapsedMs > 0) {
-      return elapsedMs;
-    }
-
-    const status = audioRecorder.getStatus?.();
-    const durationFromStatus =
-      status?.durationMillis || status?.duration || status?.currentTime;
-
-    if (typeof durationFromStatus === "number") {
-      return durationFromStatus > 1000
-        ? durationFromStatus
-        : durationFromStatus * 1000;
-    }
-
-    if (typeof audioRecorder.currentTime === "number") {
-      return audioRecorder.currentTime * 1000;
-    }
-
-    return 0;
-  }, [audioRecorder, getRecordingElapsedMs]);
-
   useEffect(() => {
     messageRef.current = message;
   }, [message]);
 
-  const submitVoiceTranscript = useCallback(async (transcript) => {
+  const fillInputWithVoiceTranscript = useCallback((transcript) => {
     const cleanTranscript = String(transcript || "").replace(/\s+/g, " ").trim();
 
-    if (!cleanTranscript || speechSubmittedRef.current) {
+    if (!cleanTranscript) {
       return;
     }
 
-    speechSubmittedRef.current = true;
     const currentText = messageRef.current.trim();
-    const voiceMessage = currentText
+    const nextMessage = currentText
       ? `${currentText} ${cleanTranscript}`
       : cleanTranscript;
 
     setError("");
+    setMessage(nextMessage);
     setVoiceStatus("idle");
-    await sendMessageRef.current?.(voiceMessage);
+  }, []);
+
+  const requestSpeechRecognitionPermission = useCallback(async (speechModule) => {
+    if (speechModule?.requestPermissionsAsync) {
+      return speechModule.requestPermissionsAsync();
+    }
+
+    if (
+      !speechModule?.requestMicrophonePermissionsAsync &&
+      !speechModule?.requestSpeechRecognizerPermissionsAsync
+    ) {
+      return { granted: false };
+    }
+
+    const microphonePermission =
+      await speechModule?.requestMicrophonePermissionsAsync?.();
+    const speechPermission =
+      await speechModule?.requestSpeechRecognizerPermissionsAsync?.();
+
+    return {
+      granted:
+        microphonePermission?.granted !== false &&
+        speechPermission?.granted !== false,
+    };
   }, []);
 
   const stopDeviceSpeechRecognition = useCallback(() => {
@@ -368,7 +332,8 @@ const ChatbotScreen = () => {
   const startDeviceSpeechRecognition = useCallback(async () => {
     const speechModule = ExpoSpeechRecognitionModule;
 
-    if (!speechModule?.start || !speechModule?.requestPermissionsAsync) {
+    if (!speechModule?.start) {
+      setError("Device voice recognition available nahi hai. Please type karein.");
       return false;
     }
 
@@ -381,25 +346,19 @@ const ChatbotScreen = () => {
     }
 
     if (!recognitionAvailable) {
+      setError("Device voice recognition available nahi hai. Please type karein.");
       return false;
     }
 
-    const permission = await speechModule.requestPermissionsAsync();
+    const permission = await requestSpeechRecognitionPermission(speechModule);
 
     if (!permission?.granted) {
       setError("Microphone permission required hai voice message ke liye.");
       return true;
     }
 
-    try {
-      await setAudioModeAsync({ allowsRecording: false });
-    } catch (_error) {
-      // Native speech recognition manages its own audio session.
-    }
-
     speechTranscriptRef.current = "";
     speechHadErrorRef.current = false;
-    speechSubmittedRef.current = false;
     speechStopRequestedRef.current = false;
     voiceModeRef.current = "speech";
     recordingStartedAtRef.current = Date.now();
@@ -433,9 +392,14 @@ const ChatbotScreen = () => {
       voiceModeRef.current = "idle";
       recordingStartedAtRef.current = null;
       setVoiceStatus("idle");
+      setError("Voice recording start nahi ho saki. Dobara try karein.");
       return false;
     }
-  }, [clearVoiceTimers, stopDeviceSpeechRecognition]);
+  }, [
+    clearVoiceTimers,
+    requestSpeechRecognitionPermission,
+    stopDeviceSpeechRecognition,
+  ]);
 
   const startVoiceInput = useCallback(async () => {
     if (loading || voiceStatus !== "idle") {
@@ -445,48 +409,7 @@ const ChatbotScreen = () => {
     setError("");
 
     try {
-      const startedDeviceSpeech = await startDeviceSpeechRecognition();
-
-      if (startedDeviceSpeech) {
-        return;
-      }
-
-      const permission = await requestRecordingPermissionsAsync();
-
-      if (!permission.granted) {
-        setError("Microphone permission required hai voice message ke liye.");
-        return;
-      }
-
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-      const status = audioRecorder.getStatus?.();
-
-      if (!status?.canRecord) {
-        await audioRecorder.prepareToRecordAsync();
-      }
-
-      audioRecorder.record();
-      voiceModeRef.current = "recording";
-      silenceStartedAtRef.current = null;
-      recordingStartedAtRef.current = Date.now();
-      clearVoiceTimers();
-      maxRecordingTimerRef.current = setTimeout(() => {
-        stopVoiceInputRef.current?.();
-      }, MAX_VOICE_RECORDING_MS);
-      noMeteringTimerRef.current = setTimeout(() => {
-        const currentStatus = audioRecorder.getStatus?.();
-
-        if (
-          currentStatus?.isRecording &&
-          typeof currentStatus?.metering !== "number"
-        ) {
-          stopVoiceInputRef.current?.();
-        }
-      }, NO_METERING_AUTO_STOP_MS);
-      setVoiceStatus("recording");
+      await startDeviceSpeechRecognition();
     } catch (err) {
       clearVoiceTimers();
       voiceModeRef.current = "idle";
@@ -495,7 +418,6 @@ const ChatbotScreen = () => {
       setError(err.message || "Voice recording start nahi ho saki.");
     }
   }, [
-    audioRecorder,
     clearVoiceTimers,
     loading,
     startDeviceSpeechRecognition,
@@ -503,65 +425,19 @@ const ChatbotScreen = () => {
   ]);
 
   const stopVoiceInput = useCallback(
-    async ({ shouldTranscribe = true } = {}) => {
+    async () => {
       if (voiceModeRef.current === "speech") {
         stopDeviceSpeechRecognition();
         return;
       }
 
-      if (voiceStatus !== "recording") {
-        return;
-      }
-
-      const durationMs = getRecordingDurationMs();
-      setVoiceStatus(shouldTranscribe ? "transcribing" : "idle");
       clearVoiceTimers();
-      silenceStartedAtRef.current = null;
       recordingStartedAtRef.current = null;
-
-      try {
-        await audioRecorder.stop();
-        await setAudioModeAsync({ allowsRecording: false });
-
-        const recordingUri =
-          audioRecorder.uri ||
-          audioRecorder.getStatus?.()?.url ||
-          recorderState.url;
-
-        if (!shouldTranscribe) {
-          return;
-        }
-
-        if (durationMs < MIN_VOICE_RECORDING_MS) {
-          setError("Thora lamba bol kar try karein.");
-          return;
-        }
-
-        if (!recordingUri) {
-          setError("Recording save nahi ho saki. Mic dobara try karein.");
-          return;
-        }
-
-        const transcript = await transcribeVoiceMessage(recordingUri);
-        const currentText = messageRef.current.trim();
-        const voiceMessage = currentText ? `${currentText} ${transcript}` : transcript;
-
-        setError("");
-        setVoiceStatus("idle");
-        await sendMessageRef.current?.(voiceMessage);
-      } catch (err) {
-        setError(err.message || "Voice text mein convert nahi ho saki.");
-      } finally {
-        setVoiceStatus("idle");
-      }
+      setVoiceStatus("idle");
     },
     [
-      audioRecorder,
       clearVoiceTimers,
-      getRecordingDurationMs,
-      recorderState.url,
       stopDeviceSpeechRecognition,
-      voiceStatus,
     ]
   );
 
@@ -629,9 +505,7 @@ const ChatbotScreen = () => {
         setVoiceStatus("idle");
 
         if (transcript) {
-          submitVoiceTranscript(transcript).catch((err) => {
-            setError(err.message || "Voice message send nahi ho saka.");
-          });
+          fillInputWithVoiceTranscript(transcript);
           return;
         }
 
@@ -644,7 +518,7 @@ const ChatbotScreen = () => {
     return () => {
       subscriptions.forEach((subscription) => subscription?.remove?.());
     };
-  }, [clearVoiceTimers, submitVoiceTranscript]);
+  }, [clearVoiceTimers, fillInputWithVoiceTranscript]);
 
   const migrateLocalChatSessionsToCloud = useCallback(async (userId) => {
     const localSessions = await loadLocalChatSessions(userId);
@@ -905,55 +779,6 @@ const ChatbotScreen = () => {
     }
   };
 
-  sendMessageRef.current = handleSend;
-
-  useEffect(() => {
-    if (voiceStatus !== "recording" || !recorderState.isRecording) {
-      silenceStartedAtRef.current = null;
-      return;
-    }
-
-    const durationMs = getRecordingElapsedMs();
-
-    if (durationMs >= MAX_VOICE_RECORDING_MS) {
-      stopVoiceInputRef.current?.();
-      return;
-    }
-
-    if (durationMs < MIN_AUTO_STOP_RECORDING_MS) {
-      return;
-    }
-
-    const metering = recorderState.metering;
-
-    if (typeof metering !== "number") {
-      return;
-    }
-
-    const isSilent = metering < SILENCE_METERING_THRESHOLD;
-    const now = Date.now();
-
-    if (!isSilent) {
-      silenceStartedAtRef.current = null;
-      return;
-    }
-
-    if (!silenceStartedAtRef.current) {
-      silenceStartedAtRef.current = now;
-      return;
-    }
-
-    if (now - silenceStartedAtRef.current >= SILENCE_STOP_MS) {
-      stopVoiceInputRef.current?.();
-    }
-  }, [
-    getRecordingElapsedMs,
-    getRecordingDurationMs,
-    recorderState.isRecording,
-    recorderState.metering,
-    voiceStatus,
-  ]);
-
   useEffect(() => {
     return () => {
       clearVoiceTimers();
@@ -964,12 +789,8 @@ const ChatbotScreen = () => {
           // Ignore cleanup failures during screen unmount.
         }
       }
-      if (audioRecorder.isRecording) {
-        audioRecorder.stop().catch(() => {});
-      }
-      setAudioModeAsync({ allowsRecording: false }).catch(() => {});
     };
-  }, [audioRecorder, clearVoiceTimers]);
+  }, [clearVoiceTimers]);
 
   useEffect(() => {
     if (initializedSessionsRef.current) {
