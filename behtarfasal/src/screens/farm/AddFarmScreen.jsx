@@ -63,6 +63,27 @@ const openPhoneNumber = (phoneNumber) => {
   });
 };
 
+const FIELD_HELP_TEXT = {
+  farmerName: 'Enter the farmer or farm owner name.',
+  farmName: 'Give this farm a short name so you can find it later.',
+  sizeAcres: 'Add the total cultivated area in acres.',
+  province: 'Select the province where the farm is located.',
+  district: 'Choose the district used for weather and local recommendations.',
+  village: 'Optional nearby village or area name for your records.',
+  soilResultsToggle: 'Turn this on only if you have lab or field test values.',
+  soilType: 'Pick the soil texture closest to your field report.',
+  phLevel: 'Soil acidity or alkalinity from your report.',
+  nitrogen: 'Enter the available nitrogen value, usually shown as N.',
+  phosphorus: 'Enter the available phosphorus value, usually shown as P.',
+  potassium: 'Enter the available potassium value, usually shown as K.',
+  temperature: 'Average field temperature in Celsius for the current season.',
+  humidity: 'Average relative humidity percentage for your farm area.',
+  rainfall: 'Expected or recent rainfall amount in millimeters.',
+  croppingSystem: 'Select how crops are planted on this farm.',
+  soilSustainability: 'Choose the option that best matches soil-care practices.',
+  irrigationFacilities: 'Select all water sources or irrigation methods available.',
+};
+
 
 const AddFarmScreen = ({ navigation, route }) => {
   const existingFarm = route.params?.farm || null;
@@ -369,6 +390,7 @@ const AddFarmScreen = ({ navigation, route }) => {
     required = false,
     placeholder = 'Select option',
     disabled = false,
+    helperText = '',
   }) => {
     const isOpen = openDropdownKey === fieldKey;
     const selected = formData[fieldKey];
@@ -379,6 +401,7 @@ const AddFarmScreen = ({ navigation, route }) => {
           {label}
           {required ? ' *' : ''}
         </Text>
+        {helperText ? <Text style={styles.fieldHint}>{helperText}</Text> : null}
 
         <Pressable
           style={[styles.dropdownButton, disabled && styles.dropdownButtonDisabled]}
@@ -429,6 +452,7 @@ const AddFarmScreen = ({ navigation, route }) => {
     return (
       <View style={styles.fieldBlock}>
         <Text style={styles.labelText}>District *</Text>
+        <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.district}</Text>
         <Pressable
           style={[styles.dropdownButton, !canSelectDistrict && styles.dropdownButtonDisabled]}
           onPress={() => {
@@ -507,6 +531,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
       <View style={styles.fieldBlock}>
         <Text style={styles.labelText}>Farmer Name *</Text>
+        <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.farmerName}</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter farmer name"
@@ -519,6 +544,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
       <View style={styles.fieldBlock}>
         <Text style={styles.labelText}>Farm Name *</Text>
+        <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.farmName}</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter farm name"
@@ -531,6 +557,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
       <View style={styles.fieldBlock}>
         <Text style={styles.labelText}>Farm Size (Acres) *</Text>
+        <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.sizeAcres}</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter farm size"
@@ -548,12 +575,14 @@ const AddFarmScreen = ({ navigation, route }) => {
         fieldKey: 'province',
         options: PROVINCES,
         required: true,
+        helperText: FIELD_HELP_TEXT.province,
       })}
 
       {renderDistrictField()}
 
       <View style={styles.fieldBlock}>
         <Text style={styles.labelText}>Village</Text>
+        <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.village}</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter village"
@@ -566,13 +595,16 @@ const AddFarmScreen = ({ navigation, route }) => {
     </View>
   );
 
-  const renderCheckbox = ({ label, value, onPress }) => (
-    <Pressable style={styles.checkboxRow} onPress={onPress}>
-      <View style={[styles.checkbox, value && styles.checkboxActive]}>
-        {value ? <Text style={styles.checkboxMark}>v</Text> : null}
-      </View>
-      <Text style={styles.checkboxLabel}>{label}</Text>
-    </Pressable>
+  const renderCheckbox = ({ label, value, onPress, helperText = '' }) => (
+    <View style={styles.checkboxBlock}>
+      <Pressable style={styles.checkboxRow} onPress={onPress}>
+        <View style={[styles.checkbox, value && styles.checkboxActive]}>
+          {value ? <Text style={styles.checkboxMark}>v</Text> : null}
+        </View>
+        <Text style={styles.checkboxLabel}>{label}</Text>
+      </Pressable>
+      {helperText ? <Text style={styles.fieldHint}>{helperText}</Text> : null}
+    </View>
   );
 
   const openNearbyLabSearch = () => {
@@ -626,6 +658,7 @@ const AddFarmScreen = ({ navigation, route }) => {
         label: 'I have soil test results',
         value: hasSoilTest,
         onPress: () => setHasSoilTest((prev) => !prev),
+        helperText: FIELD_HELP_TEXT.soilResultsToggle,
       })}
 
       {hasSoilTest ? (
@@ -635,10 +668,12 @@ const AddFarmScreen = ({ navigation, route }) => {
             fieldKey: 'soilType',
             options: SOIL_TYPES,
             required: true,
+            helperText: FIELD_HELP_TEXT.soilType,
           })}
 
           <View style={styles.fieldBlock}>
             <Text style={styles.labelText}>pH Level</Text>
+            <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.phLevel}</Text>
             <TextInput
               style={styles.input}
               placeholder="3.5 to 8.0"
@@ -653,6 +688,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
           <View style={styles.fieldBlock}>
             <Text style={styles.labelText}>Nitrogen (N)</Text>
+            <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.nitrogen}</Text>
             <TextInput
               style={styles.input}
               placeholder="Enter nitrogen"
@@ -665,6 +701,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
           <View style={styles.fieldBlock}>
             <Text style={styles.labelText}>Phosphorus (P)</Text>
+            <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.phosphorus}</Text>
             <TextInput
               style={styles.input}
               placeholder="Enter phosphorus"
@@ -677,6 +714,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
           <View style={styles.fieldBlock}>
             <Text style={styles.labelText}>Potassium (K)</Text>
+            <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.potassium}</Text>
             <TextInput
               style={styles.input}
               placeholder="Enter potassium"
@@ -689,6 +727,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
           <View style={styles.fieldBlock}>
             <Text style={styles.labelText}>Temperature (C)</Text>
+            <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.temperature}</Text>
             <TextInput
               style={styles.input}
               placeholder="0 to 42"
@@ -701,6 +740,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
           <View style={styles.fieldBlock}>
             <Text style={styles.labelText}>Humidity (%)</Text>
+            <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.humidity}</Text>
             <TextInput
               style={styles.input}
               placeholder="14 to 98"
@@ -713,6 +753,7 @@ const AddFarmScreen = ({ navigation, route }) => {
 
           <View style={styles.fieldBlock}>
             <Text style={styles.labelText}>Rainfall (mm)</Text>
+            <Text style={styles.fieldHint}>{FIELD_HELP_TEXT.rainfall}</Text>
             <TextInput
               style={styles.input}
               placeholder="20 to 300"
@@ -741,6 +782,7 @@ const AddFarmScreen = ({ navigation, route }) => {
         fieldKey: 'croppingSystem',
         options: CROPPING_SYSTEMS,
         required: true,
+        helperText: FIELD_HELP_TEXT.croppingSystem,
       })}
 
       {renderDropdown({
@@ -748,9 +790,11 @@ const AddFarmScreen = ({ navigation, route }) => {
         fieldKey: 'soilSustainability',
         options: SOIL_SUSTAINABILITY_OPTIONS,
         required: true,
+        helperText: FIELD_HELP_TEXT.soilSustainability,
       })}
 
       <Text style={styles.sectionTitle}>Irrigation Facilities</Text>
+      <Text style={styles.sectionSubtitle}>{FIELD_HELP_TEXT.irrigationFacilities}</Text>
 
       <View style={styles.grid}>
         {IRRIGATION_OPTIONS.map((item) => {
@@ -850,6 +894,12 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: theme.fontSize.sm,
     fontWeight: '600',
+    marginBottom: theme.spacing.xs,
+  },
+  fieldHint: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.xs,
+    lineHeight: 16,
     marginBottom: theme.spacing.xs,
   },
   input: {
@@ -967,10 +1017,13 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm,
     marginTop: theme.spacing.sm,
   },
+  checkboxBlock: {
+    marginBottom: theme.spacing.md,
+  },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
   },
   checkbox: {
     width: 20,

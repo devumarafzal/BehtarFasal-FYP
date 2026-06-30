@@ -28,36 +28,8 @@ import {
 } from "../../firebase/firestore";
 import { getApiBaseUrl, getNetworkErrorMessage } from "../../services/apiConfig";
 
-let ExpoSpeechRecognitionModule = null;
-
-try {
-  ExpoSpeechRecognitionModule =
-    require("expo-speech-recognition").ExpoSpeechRecognitionModule;
-} catch (_error) {
-  ExpoSpeechRecognitionModule = null;
-}
-
 const API_BASE_URL = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
 const CHAT_SESSION_STORAGE_PREFIX = "@behtarfasal/chatSessions/";
-const MAX_VOICE_RECORDING_MS = 30000;
-
-const SPEECH_RECOGNITION_CONTEXT = [
-  "gandum",
-  "chawal",
-  "makai",
-  "kapas",
-  "ganna",
-  "barish",
-  "mausam",
-  "pani",
-  "khad",
-  "DAP",
-  "urea",
-  "bemari",
-  "keera",
-  "AgriAssist",
-  "BehtarFasal",
-];
 
 const WELCOME_MESSAGE = {
   role: "ai",
@@ -232,7 +204,6 @@ const ChatbotScreen = () => {
   const initialWindowHeightRef = useRef(Dimensions.get("window").height);
   const [loading, setLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState("idle");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -241,284 +212,6 @@ const ChatbotScreen = () => {
   const [chatHistory, setChatHistory] = useState(() => createInitialHistory());
   const scrollViewRef = useRef();
   const initializedSessionsRef = useRef(false);
-  const stopVoiceInputRef = useRef(null);
-  const messageRef = useRef("");
-  const voiceModeRef = useRef("idle");
-  const speechTranscriptRef = useRef("");
-  const speechHadErrorRef = useRef(false);
-  const speechStopRequestedRef = useRef(false);
-  const recordingStartedAtRef = useRef(null);
-  const maxRecordingTimerRef = useRef(null);
-
-  const clearVoiceTimers = useCallback(() => {
-    if (maxRecordingTimerRef.current) {
-      clearTimeout(maxRecordingTimerRef.current);
-      maxRecordingTimerRef.current = null;
-    }
-  }, []);
-
-  const getRecordingElapsedMs = useCallback(() => {
-    if (!recordingStartedAtRef.current) {
-      return 0;
-    }
-
-    return Date.now() - recordingStartedAtRef.current;
-  }, []);
-
-  useEffect(() => {
-    messageRef.current = message;
-  }, [message]);
-
-  const fillInputWithVoiceTranscript = useCallback((transcript) => {
-    const cleanTranscript = String(transcript || "").replace(/\s+/g, " ").trim();
-
-    if (!cleanTranscript) {
-      return;
-    }
-
-    const currentText = messageRef.current.trim();
-    const nextMessage = currentText
-      ? `${currentText} ${cleanTranscript}`
-      : cleanTranscript;
-
-    setError("");
-    setMessage(nextMessage);
-    setVoiceStatus("idle");
-  }, []);
-
-  const requestSpeechRecognitionPermission = useCallback(async (speechModule) => {
-    if (speechModule?.requestPermissionsAsync) {
-      return speechModule.requestPermissionsAsync();
-    }
-
-    if (
-      !speechModule?.requestMicrophonePermissionsAsync &&
-      !speechModule?.requestSpeechRecognizerPermissionsAsync
-    ) {
-      return { granted: false };
-    }
-
-    const microphonePermission =
-      await speechModule?.requestMicrophonePermissionsAsync?.();
-    const speechPermission =
-      await speechModule?.requestSpeechRecognizerPermissionsAsync?.();
-
-    return {
-      granted:
-        microphonePermission?.granted !== false &&
-        speechPermission?.granted !== false,
-    };
-  }, []);
-
-  const stopDeviceSpeechRecognition = useCallback(() => {
-    if (voiceModeRef.current !== "speech") {
-      return false;
-    }
-
-    speechStopRequestedRef.current = true;
-    setVoiceStatus("transcribing");
-
-    try {
-      ExpoSpeechRecognitionModule?.stop?.();
-    } catch (_error) {
-      voiceModeRef.current = "idle";
-      setVoiceStatus("idle");
-      setError("Device voice recognition stop nahi ho saki. Dobara try karein.");
-    }
-
-    return true;
-  }, []);
-
-  const startDeviceSpeechRecognition = useCallback(async () => {
-    const speechModule = ExpoSpeechRecognitionModule;
-
-    if (!speechModule?.start) {
-      setError("Device voice recognition available nahi hai. Please type karein.");
-      return false;
-    }
-
-    let recognitionAvailable = false;
-
-    try {
-      recognitionAvailable = speechModule.isRecognitionAvailable?.() !== false;
-    } catch (_error) {
-      recognitionAvailable = false;
-    }
-
-    if (!recognitionAvailable) {
-      setError("Device voice recognition available nahi hai. Please type karein.");
-      return false;
-    }
-
-    const permission = await requestSpeechRecognitionPermission(speechModule);
-
-    if (!permission?.granted) {
-      setError("Microphone permission required hai voice message ke liye.");
-      return true;
-    }
-
-    speechTranscriptRef.current = "";
-    speechHadErrorRef.current = false;
-    speechStopRequestedRef.current = false;
-    voiceModeRef.current = "speech";
-    recordingStartedAtRef.current = Date.now();
-    clearVoiceTimers();
-    maxRecordingTimerRef.current = setTimeout(() => {
-      if (voiceModeRef.current === "speech") {
-        stopDeviceSpeechRecognition();
-      }
-    }, MAX_VOICE_RECORDING_MS);
-    setVoiceStatus("recording");
-
-    try {
-      speechModule.start({
-        lang: "ur-PK",
-        interimResults: true,
-        maxAlternatives: 1,
-        continuous: false,
-        contextualStrings: SPEECH_RECOGNITION_CONTEXT,
-        androidIntentOptions: {
-          EXTRA_LANGUAGE_MODEL: "free_form",
-          EXTRA_PARTIAL_RESULTS: true,
-          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 1400,
-          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 1200,
-          EXTRA_MASK_OFFENSIVE_WORDS: false,
-        },
-        iosTaskHint: "dictation",
-      });
-      return true;
-    } catch (_error) {
-      clearVoiceTimers();
-      voiceModeRef.current = "idle";
-      recordingStartedAtRef.current = null;
-      setVoiceStatus("idle");
-      setError("Voice recording start nahi ho saki. Dobara try karein.");
-      return false;
-    }
-  }, [
-    clearVoiceTimers,
-    requestSpeechRecognitionPermission,
-    stopDeviceSpeechRecognition,
-  ]);
-
-  const startVoiceInput = useCallback(async () => {
-    if (loading || voiceStatus !== "idle") {
-      return;
-    }
-
-    setError("");
-
-    try {
-      await startDeviceSpeechRecognition();
-    } catch (err) {
-      clearVoiceTimers();
-      voiceModeRef.current = "idle";
-      recordingStartedAtRef.current = null;
-      setVoiceStatus("idle");
-      setError(err.message || "Voice recording start nahi ho saki.");
-    }
-  }, [
-    clearVoiceTimers,
-    loading,
-    startDeviceSpeechRecognition,
-    voiceStatus,
-  ]);
-
-  const stopVoiceInput = useCallback(
-    async () => {
-      if (voiceModeRef.current === "speech") {
-        stopDeviceSpeechRecognition();
-        return;
-      }
-
-      clearVoiceTimers();
-      recordingStartedAtRef.current = null;
-      setVoiceStatus("idle");
-    },
-    [
-      clearVoiceTimers,
-      stopDeviceSpeechRecognition,
-    ]
-  );
-
-  stopVoiceInputRef.current = stopVoiceInput;
-
-  useEffect(() => {
-    const speechModule = ExpoSpeechRecognitionModule;
-
-    if (!speechModule?.addListener) {
-      return undefined;
-    }
-
-    const subscriptions = [
-      speechModule.addListener("start", () => {
-        if (voiceModeRef.current === "speech") {
-          setVoiceStatus("recording");
-        }
-      }),
-      speechModule.addListener("result", (event) => {
-        const transcript = String(event?.results?.[0]?.transcript || "")
-          .replace(/\s+/g, " ")
-          .trim();
-
-        if (transcript) {
-          speechTranscriptRef.current = transcript;
-        }
-      }),
-      speechModule.addListener("nomatch", () => {
-        if (voiceModeRef.current === "speech") {
-          speechHadErrorRef.current = true;
-          setError("Voice samajh nahi aa saki. Dobara bol kar try karein.");
-        }
-      }),
-      speechModule.addListener("error", (event) => {
-        if (
-          voiceModeRef.current !== "speech" ||
-          (event?.error === "aborted" && speechStopRequestedRef.current)
-        ) {
-          return;
-        }
-
-        speechHadErrorRef.current = true;
-
-        if (event?.error === "not-allowed") {
-          setError("Microphone permission required hai voice message ke liye.");
-        } else if (event?.error === "no-speech") {
-          setError("Voice samajh nahi aa saki. Dobara bol kar try karein.");
-        } else if (event?.message) {
-          setError(`Voice recognition error: ${event.message}`);
-        } else {
-          setError("Device voice recognition available nahi hai. Dobara try karein.");
-        }
-      }),
-      speechModule.addListener("end", () => {
-        if (voiceModeRef.current !== "speech") {
-          return;
-        }
-
-        clearVoiceTimers();
-        recordingStartedAtRef.current = null;
-        const transcript = speechTranscriptRef.current;
-        const hadError = speechHadErrorRef.current;
-        voiceModeRef.current = "idle";
-        speechStopRequestedRef.current = false;
-        setVoiceStatus("idle");
-
-        if (transcript) {
-          fillInputWithVoiceTranscript(transcript);
-          return;
-        }
-
-        if (!hadError) {
-          setError("Voice samajh nahi aa saki. Dobara bol kar try karein.");
-        }
-      }),
-    ];
-
-    return () => {
-      subscriptions.forEach((subscription) => subscription?.remove?.());
-    };
-  }, [clearVoiceTimers, fillInputWithVoiceTranscript]);
 
   const migrateLocalChatSessionsToCloud = useCallback(async (userId) => {
     const localSessions = await loadLocalChatSessions(userId);
@@ -780,19 +473,6 @@ const ChatbotScreen = () => {
   };
 
   useEffect(() => {
-    return () => {
-      clearVoiceTimers();
-      if (voiceModeRef.current === "speech") {
-        try {
-          ExpoSpeechRecognitionModule?.abort?.();
-        } catch (_error) {
-          // Ignore cleanup failures during screen unmount.
-        }
-      }
-    };
-  }, [clearVoiceTimers]);
-
-  useEffect(() => {
     if (initializedSessionsRef.current) {
       return;
     }
@@ -833,19 +513,6 @@ const ChatbotScreen = () => {
       hideSubscription.remove();
     };
   }, []);
-
-  const isRecordingVoice = voiceStatus === "recording";
-  const isTranscribingVoice = voiceStatus === "transcribing";
-  const voiceButtonDisabled = loading || isTranscribingVoice;
-  const voiceElapsedSeconds = Math.max(
-    0,
-    Math.floor(getRecordingElapsedMs() / 1000)
-  );
-  const voiceHint = isRecordingVoice
-    ? `Listening... ${voiceElapsedSeconds}s`
-    : isTranscribingVoice
-      ? "Voice ko text mein convert kar raha hai..."
-      : "";
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right"]}>
@@ -972,7 +639,6 @@ const ChatbotScreen = () => {
             ) : null}
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            {voiceHint ? <Text style={styles.voiceHintText}>{voiceHint}</Text> : null}
 
             {chatHistory.length === 1 && (
               <View style={styles.tipCard}>
@@ -1036,14 +702,13 @@ const ChatbotScreen = () => {
             >
               <TextInput
                 style={styles.input}
-                placeholder={isRecordingVoice ? "Listening..." : "Type your question"}
+                placeholder="Type your question"
                 placeholderTextColor={theme.colors.textSecondary}
                 keyboardType="default"
                 value={message}
                 multiline
                 maxLength={700}
                 returnKeyType="send"
-                editable={!isTranscribingVoice}
                 onChangeText={(value) => {
                   setMessage(value);
                   if (error) {
@@ -1058,42 +723,11 @@ const ChatbotScreen = () => {
               />
               <Pressable
                 style={[
-                  styles.voiceButton,
-                  isRecordingVoice && styles.voiceButtonRecording,
-                  voiceButtonDisabled && styles.sendButtonDisabled,
-                ]}
-                onPress={
-                  isRecordingVoice
-                    ? () => stopVoiceInputRef.current?.()
-                    : startVoiceInput
-                }
-                disabled={voiceButtonDisabled}
-                accessibilityLabel={
-                  isRecordingVoice ? "Stop voice input" : "Start voice input"
-                }
-              >
-                {isTranscribingVoice ? (
-                  <ActivityIndicator color={theme.colors.primary} />
-                ) : (
-                  <Ionicons
-                    name={isRecordingVoice ? "stop" : "mic"}
-                    size={20}
-                    color={
-                      isRecordingVoice
-                        ? theme.colors.surface
-                        : theme.colors.primary
-                    }
-                  />
-                )}
-              </Pressable>
-              <Pressable
-                style={[
                   styles.sendButton,
-                  (loading || isRecordingVoice || !message.trim()) &&
-                    styles.sendButtonDisabled,
+                  (loading || !message.trim()) && styles.sendButtonDisabled,
                 ]}
                 onPress={handleSend}
-                disabled={loading || isRecordingVoice || !message.trim()}
+                disabled={loading || !message.trim()}
               >
                 {loading ? (
                   <ActivityIndicator color={theme.colors.surface} />
@@ -1238,11 +872,6 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm,
     marginBottom: theme.spacing.sm,
   },
-  voiceHintText: {
-    color: theme.colors.textSecondary,
-    fontSize: theme.fontSize.sm,
-    marginBottom: theme.spacing.sm,
-  },
   tipCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
@@ -1325,21 +954,6 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.md,
     marginRight: theme.spacing.sm,
     maxHeight: 110,
-  },
-  voiceButton: {
-    width: 44,
-    height: 44,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: theme.spacing.sm,
-  },
-  voiceButtonRecording: {
-    backgroundColor: theme.colors.error,
-    borderColor: theme.colors.error,
   },
   sendButton: {
     backgroundColor: theme.colors.primary,

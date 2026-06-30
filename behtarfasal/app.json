@@ -13,7 +13,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F8FBF7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -40,25 +40,7 @@
           }
         }
       ],
-      "expo-font",
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "Allow BehtarFasal to record voice questions for the chatbot."
-        }
-      ],
-      [
-        "expo-speech-recognition",
-        {
-          "microphonePermission": "Allow BehtarFasal to listen to voice questions for the chatbot.",
-          "speechRecognitionPermission": "Allow BehtarFasal to convert voice questions into text.",
-          "androidSpeechServicePackages": [
-            "com.google.android.googlequicksearchbox",
-            "com.google.android.tts",
-            "com.google.android.as"
-          ]
-        }
-      ]
+      "expo-font"
     ],
     "experiments": {
       "reactCompiler": true

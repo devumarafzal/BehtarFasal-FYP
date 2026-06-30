@@ -16,6 +16,3 @@ class ChatResponse(BaseModel):
     reply: str
     intent: str
     data: Optional[Dict[str, Any]] = None
-
-class ChatTranscribeResponse(BaseModel):
-    text: str
