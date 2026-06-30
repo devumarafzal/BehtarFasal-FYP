@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 class GeminiTranscriptionError(RuntimeError):
     """Raised when audio transcription fails before Gemini returns a transcript."""
 
+    def __init__(
+        self,
+        log_message: str,
+        user_message: str = "Voice service abhi available nahi hai. Please sawal type kar dein ya thori dair baad try karein.",
+        status_code: int = 502,
+    ):
+        super().__init__(log_message)
+        self.user_message = user_message
+        self.status_code = status_code
+
+
+VOICE_CONFIG_ERROR_MESSAGE = (
+    "Voice service abhi configure nahi hai. Please sawal type kar dein."
+)
+VOICE_QUOTA_ERROR_MESSAGE = (
+    "Voice service ki limit abhi complete ho gayi hai. Please thori dair baad try karein ya sawal type kar dein."
+)
+
 
 def _sanitize_log_text(value: object) -> str:
     text = str(value)
@@ -24,6 +42,33 @@ def _sanitize_log_text(value: object) -> str:
     text = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "AIza[REDACTED]", text)
     text = re.sub(r"AQ\.[0-9A-Za-z_.-]{20,}", "AQ.[REDACTED]", text)
     return text
+
+
+def _is_quota_error(value: object, status_code: int | None = None) -> bool:
+    text = str(value).lower()
+    return (
+        status_code == 429
+        or "resource_exhausted" in text
+        or "quota" in text
+        or "exhausted" in text
+    )
+
+
+def _is_invalid_api_key_error(value: object, status_code: int | None = None) -> bool:
+    text = str(value).lower()
+    return (
+        status_code in {400, 401, 403}
+        and (
+            "api_key_invalid" in text
+            or "api key not valid" in text
+            or "invalid api key" in text
+            or "key not valid" in text
+        )
+    ) or (
+        "api_key_invalid" in text
+        or "api key not valid" in text
+        or "invalid api key" in text
+    )
 
 try:
     import google.generativeai as genai
@@ -208,6 +253,16 @@ def _candidate_models() -> List[str]:
     return normalized
 
 
+def get_gemini_status() -> dict:
+    """Return non-secret Gemini runtime status for debugging deployment config."""
+    return {
+        "gemini_key_configured": bool(GEMINI_API_KEY),
+        "gemini_model": GEMINI_MODEL,
+        "candidate_models": _candidate_models(),
+        "provider": "google-generativeai" if genai else "rest",
+    }
+
+
 def _send_gemini_rest(prompt: str, history: list, system_prompt: str, model_name: str) -> str:
     model = urllib.parse.quote(model_name, safe="")
     url = f"{GEMINI_API_URL.format(model=model)}?key={urllib.parse.quote(GEMINI_API_KEY)}"
@@ -285,8 +340,11 @@ def _upload_and_transcribe_audio(audio_bytes: bytes, mime_type: str, model_name:
         "audio/mp4": ".m4a",
         "audio/m4a": ".m4a",
         "audio/x-m4a": ".m4a",
+        "audio/mpeg": ".mp3",
+        "audio/ogg": ".ogg",
         "audio/webm": ".webm",
         "audio/wav": ".wav",
+        "video/mp4": ".m4a",
     }.get(mime_type, ".m4a")
 
     temp_path = None
@@ -340,6 +398,8 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
     try:
         formatted_history = _format_gemini_history(history)
 
+        quota_failures = 0
+
         for model_name in _candidate_models():
             try:
                 if not genai:
@@ -366,26 +426,58 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
                 return response.text
             except urllib.error.HTTPError as e:
                 detail = e.read().decode("utf-8", errors="ignore")
+                if _is_invalid_api_key_error(detail, e.code):
+                    logger.error(
+                        "Gemini API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                    )
+                    return ""
+                if _is_quota_error(detail, e.code):
+                    quota_failures += 1
                 logger.warning("Gemini model %s failed: %s %s", model_name, e.code, _sanitize_log_text(detail))
             except Exception as e:
+                if _is_invalid_api_key_error(e):
+                    logger.error(
+                        "Gemini API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                    )
+                    return ""
+                if _is_quota_error(e):
+                    quota_failures += 1
                 logger.warning("Gemini model %s failed: %s", model_name, _sanitize_log_text(e))
 
-        return "Maaf kijiye, Gemini API se jawab nahi aa saka. (System Error)"
+        if quota_failures:
+            logger.warning("Gemini quota/resource exhausted for configured backend key.")
+
+        return ""
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="ignore")
+        if _is_invalid_api_key_error(detail, e.code):
+            logger.error(
+                "Gemini REST API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+            )
+            return ""
         logger.error("Gemini REST API error: %s %s", e.code, _sanitize_log_text(detail))
-        return "Maaf kijiye, Gemini API se jawab nahi aa saka. (System Error)"
+        return ""
     except Exception as e:
+        if _is_invalid_api_key_error(e):
+            logger.error(
+                "Gemini API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+            )
+            return ""
         logger.error("Gemini API error: %s", _sanitize_log_text(e))
-        return "Maaf kijiye, technical masle ki wajah se mein abhi jawab nahi de sakta. (System Error)"
+        return ""
 
 
 async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
     """Transcribe a short farmer voice note using Gemini audio input."""
     if not GEMINI_API_KEY:
-        raise GeminiTranscriptionError("Gemini API key is not configured.")
+        raise GeminiTranscriptionError(
+            "Gemini API key is not configured.",
+            user_message=VOICE_CONFIG_ERROR_MESSAGE,
+            status_code=503,
+        )
 
     failures: List[str] = []
+    quota_failures = 0
 
     for model_name in _candidate_models():
         try:
@@ -400,15 +492,47 @@ async def transcribe_audio(audio_bytes: bytes, mime_type: str) -> str:
                 return transcript
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="ignore")
+            if _is_invalid_api_key_error(detail, e.code):
+                logger.error(
+                    "Gemini transcription API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                )
+                raise GeminiTranscriptionError(
+                    "Gemini transcription API key is invalid.",
+                    user_message=VOICE_CONFIG_ERROR_MESSAGE,
+                    status_code=503,
+                ) from e
+            if _is_quota_error(detail, e.code):
+                quota_failures += 1
             failure = f"{model_name}: HTTP {e.code} {_sanitize_log_text(detail)}"
             failures.append(failure)
             logger.warning("Gemini transcription model %s failed: %s %s", model_name, e.code, _sanitize_log_text(detail))
         except Exception as e:
+            if _is_invalid_api_key_error(e):
+                logger.error(
+                    "Gemini transcription API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                )
+                raise GeminiTranscriptionError(
+                    "Gemini transcription API key is invalid.",
+                    user_message=VOICE_CONFIG_ERROR_MESSAGE,
+                    status_code=503,
+                ) from e
+            if _is_quota_error(e):
+                quota_failures += 1
             failure = f"{model_name}: {_sanitize_log_text(e)}"
             failures.append(failure)
             logger.warning("Gemini transcription model %s failed: %s", model_name, _sanitize_log_text(e))
 
+    if quota_failures:
+        raise GeminiTranscriptionError(
+            "Gemini quota is exhausted for the backend API key. "
+            "Update GEMINI_API_KEY on the FastAPI server and restart/redeploy it.",
+            user_message=VOICE_QUOTA_ERROR_MESSAGE,
+            status_code=503,
+        )
+
     if failures:
-        raise GeminiTranscriptionError(failures[-1])
+        raise GeminiTranscriptionError(
+            f"All Gemini transcription models failed. Last failure: {failures[-1]}"
+        )
 
     return ""

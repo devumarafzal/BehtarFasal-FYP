@@ -36,6 +36,15 @@ import {
 import { getApiBaseUrl, getNetworkErrorMessage } from "../../services/apiConfig";
 import { transcribeVoiceMessage } from "../../services/chatVoiceService";
 
+let ExpoSpeechRecognitionModule = null;
+
+try {
+  ExpoSpeechRecognitionModule =
+    require("expo-speech-recognition").ExpoSpeechRecognitionModule;
+} catch (_error) {
+  ExpoSpeechRecognitionModule = null;
+}
+
 const API_BASE_URL = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
 const CHAT_SESSION_STORAGE_PREFIX = "@behtarfasal/chatSessions/";
 const MIN_VOICE_RECORDING_MS = 1500;
@@ -55,6 +64,24 @@ const VOICE_RECORDING_OPTIONS = {
     audioSource: "voice_recognition",
   },
 };
+
+const SPEECH_RECOGNITION_CONTEXT = [
+  "gandum",
+  "chawal",
+  "makai",
+  "kapas",
+  "ganna",
+  "barish",
+  "mausam",
+  "pani",
+  "khad",
+  "DAP",
+  "urea",
+  "bemari",
+  "keera",
+  "AgriAssist",
+  "BehtarFasal",
+];
 
 const WELCOME_MESSAGE = {
   role: "ai",
@@ -242,6 +269,13 @@ const ChatbotScreen = () => {
   const initializedSessionsRef = useRef(false);
   const silenceStartedAtRef = useRef(null);
   const stopVoiceInputRef = useRef(null);
+  const sendMessageRef = useRef(null);
+  const messageRef = useRef("");
+  const voiceModeRef = useRef("idle");
+  const speechTranscriptRef = useRef("");
+  const speechHadErrorRef = useRef(false);
+  const speechSubmittedRef = useRef(false);
+  const speechStopRequestedRef = useRef(false);
   const recordingStartedAtRef = useRef(null);
   const maxRecordingTimerRef = useRef(null);
   const noMeteringTimerRef = useRef(null);
@@ -290,6 +324,119 @@ const ChatbotScreen = () => {
     return 0;
   }, [audioRecorder, getRecordingElapsedMs]);
 
+  useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
+
+  const submitVoiceTranscript = useCallback(async (transcript) => {
+    const cleanTranscript = String(transcript || "").replace(/\s+/g, " ").trim();
+
+    if (!cleanTranscript || speechSubmittedRef.current) {
+      return;
+    }
+
+    speechSubmittedRef.current = true;
+    const currentText = messageRef.current.trim();
+    const voiceMessage = currentText
+      ? `${currentText} ${cleanTranscript}`
+      : cleanTranscript;
+
+    setError("");
+    setVoiceStatus("idle");
+    await sendMessageRef.current?.(voiceMessage);
+  }, []);
+
+  const stopDeviceSpeechRecognition = useCallback(() => {
+    if (voiceModeRef.current !== "speech") {
+      return false;
+    }
+
+    speechStopRequestedRef.current = true;
+    setVoiceStatus("transcribing");
+
+    try {
+      ExpoSpeechRecognitionModule?.stop?.();
+    } catch (_error) {
+      voiceModeRef.current = "idle";
+      setVoiceStatus("idle");
+      setError("Device voice recognition stop nahi ho saki. Dobara try karein.");
+    }
+
+    return true;
+  }, []);
+
+  const startDeviceSpeechRecognition = useCallback(async () => {
+    const speechModule = ExpoSpeechRecognitionModule;
+
+    if (!speechModule?.start || !speechModule?.requestPermissionsAsync) {
+      return false;
+    }
+
+    let recognitionAvailable = false;
+
+    try {
+      recognitionAvailable = speechModule.isRecognitionAvailable?.() !== false;
+    } catch (_error) {
+      recognitionAvailable = false;
+    }
+
+    if (!recognitionAvailable) {
+      return false;
+    }
+
+    const permission = await speechModule.requestPermissionsAsync();
+
+    if (!permission?.granted) {
+      setError("Microphone permission required hai voice message ke liye.");
+      return true;
+    }
+
+    try {
+      await setAudioModeAsync({ allowsRecording: false });
+    } catch (_error) {
+      // Native speech recognition manages its own audio session.
+    }
+
+    speechTranscriptRef.current = "";
+    speechHadErrorRef.current = false;
+    speechSubmittedRef.current = false;
+    speechStopRequestedRef.current = false;
+    voiceModeRef.current = "speech";
+    recordingStartedAtRef.current = Date.now();
+    clearVoiceTimers();
+    maxRecordingTimerRef.current = setTimeout(() => {
+      if (voiceModeRef.current === "speech") {
+        stopDeviceSpeechRecognition();
+      }
+    }, MAX_VOICE_RECORDING_MS);
+    setVoiceStatus("recording");
+
+    try {
+      speechModule.start({
+        lang: "ur-PK",
+        interimResults: true,
+        maxAlternatives: 1,
+        continuous: false,
+        contextualStrings: SPEECH_RECOGNITION_CONTEXT,
+        androidIntentOptions: {
+          EXTRA_LANGUAGE_MODEL: "free_form",
+          EXTRA_PARTIAL_RESULTS: true,
+          EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 1400,
+          EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 1200,
+          EXTRA_MASK_OFFENSIVE_WORDS: false,
+        },
+        iosTaskHint: "dictation",
+      });
+      return true;
+    } catch (_error) {
+      clearVoiceTimers();
+      voiceModeRef.current = "idle";
+      recordingStartedAtRef.current = null;
+      setVoiceStatus("idle");
+      return false;
+    }
+  }, [clearVoiceTimers, stopDeviceSpeechRecognition]);
+
   const startVoiceInput = useCallback(async () => {
     if (loading || voiceStatus !== "idle") {
       return;
@@ -298,6 +445,12 @@ const ChatbotScreen = () => {
     setError("");
 
     try {
+      const startedDeviceSpeech = await startDeviceSpeechRecognition();
+
+      if (startedDeviceSpeech) {
+        return;
+      }
+
       const permission = await requestRecordingPermissionsAsync();
 
       if (!permission.granted) {
@@ -316,6 +469,7 @@ const ChatbotScreen = () => {
       }
 
       audioRecorder.record();
+      voiceModeRef.current = "recording";
       silenceStartedAtRef.current = null;
       recordingStartedAtRef.current = Date.now();
       clearVoiceTimers();
@@ -335,14 +489,26 @@ const ChatbotScreen = () => {
       setVoiceStatus("recording");
     } catch (err) {
       clearVoiceTimers();
+      voiceModeRef.current = "idle";
       recordingStartedAtRef.current = null;
       setVoiceStatus("idle");
       setError(err.message || "Voice recording start nahi ho saki.");
     }
-  }, [audioRecorder, clearVoiceTimers, loading, voiceStatus]);
+  }, [
+    audioRecorder,
+    clearVoiceTimers,
+    loading,
+    startDeviceSpeechRecognition,
+    voiceStatus,
+  ]);
 
   const stopVoiceInput = useCallback(
     async ({ shouldTranscribe = true } = {}) => {
+      if (voiceModeRef.current === "speech") {
+        stopDeviceSpeechRecognition();
+        return;
+      }
+
       if (voiceStatus !== "recording") {
         return;
       }
@@ -377,11 +543,12 @@ const ChatbotScreen = () => {
         }
 
         const transcript = await transcribeVoiceMessage(recordingUri);
-        setMessage((currentMessage) => {
-          const currentText = currentMessage.trim();
-          return currentText ? `${currentText} ${transcript}` : transcript;
-        });
+        const currentText = messageRef.current.trim();
+        const voiceMessage = currentText ? `${currentText} ${transcript}` : transcript;
+
         setError("");
+        setVoiceStatus("idle");
+        await sendMessageRef.current?.(voiceMessage);
       } catch (err) {
         setError(err.message || "Voice text mein convert nahi ho saki.");
       } finally {
@@ -393,11 +560,91 @@ const ChatbotScreen = () => {
       clearVoiceTimers,
       getRecordingDurationMs,
       recorderState.url,
+      stopDeviceSpeechRecognition,
       voiceStatus,
     ]
   );
 
   stopVoiceInputRef.current = stopVoiceInput;
+
+  useEffect(() => {
+    const speechModule = ExpoSpeechRecognitionModule;
+
+    if (!speechModule?.addListener) {
+      return undefined;
+    }
+
+    const subscriptions = [
+      speechModule.addListener("start", () => {
+        if (voiceModeRef.current === "speech") {
+          setVoiceStatus("recording");
+        }
+      }),
+      speechModule.addListener("result", (event) => {
+        const transcript = String(event?.results?.[0]?.transcript || "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (transcript) {
+          speechTranscriptRef.current = transcript;
+        }
+      }),
+      speechModule.addListener("nomatch", () => {
+        if (voiceModeRef.current === "speech") {
+          speechHadErrorRef.current = true;
+          setError("Voice samajh nahi aa saki. Dobara bol kar try karein.");
+        }
+      }),
+      speechModule.addListener("error", (event) => {
+        if (
+          voiceModeRef.current !== "speech" ||
+          (event?.error === "aborted" && speechStopRequestedRef.current)
+        ) {
+          return;
+        }
+
+        speechHadErrorRef.current = true;
+
+        if (event?.error === "not-allowed") {
+          setError("Microphone permission required hai voice message ke liye.");
+        } else if (event?.error === "no-speech") {
+          setError("Voice samajh nahi aa saki. Dobara bol kar try karein.");
+        } else if (event?.message) {
+          setError(`Voice recognition error: ${event.message}`);
+        } else {
+          setError("Device voice recognition available nahi hai. Dobara try karein.");
+        }
+      }),
+      speechModule.addListener("end", () => {
+        if (voiceModeRef.current !== "speech") {
+          return;
+        }
+
+        clearVoiceTimers();
+        recordingStartedAtRef.current = null;
+        const transcript = speechTranscriptRef.current;
+        const hadError = speechHadErrorRef.current;
+        voiceModeRef.current = "idle";
+        speechStopRequestedRef.current = false;
+        setVoiceStatus("idle");
+
+        if (transcript) {
+          submitVoiceTranscript(transcript).catch((err) => {
+            setError(err.message || "Voice message send nahi ho saka.");
+          });
+          return;
+        }
+
+        if (!hadError) {
+          setError("Voice samajh nahi aa saki. Dobara bol kar try karein.");
+        }
+      }),
+    ];
+
+    return () => {
+      subscriptions.forEach((subscription) => subscription?.remove?.());
+    };
+  }, [clearVoiceTimers, submitVoiceTranscript]);
 
   const migrateLocalChatSessionsToCloud = useCallback(async (userId) => {
     const localSessions = await loadLocalChatSessions(userId);
@@ -560,12 +807,15 @@ const ChatbotScreen = () => {
     ]);
   };
 
-  const handleSend = async () => {
-    if (!message.trim()) {
+  const handleSend = async (messageOverride) => {
+    const sourceMessage =
+      typeof messageOverride === "string" ? messageOverride : message;
+
+    if (!sourceMessage.trim()) {
       return;
     }
 
-    const userMessage = message.trim();
+    const userMessage = sourceMessage.trim();
     setMessage("");
     setError("");
 
@@ -655,6 +905,8 @@ const ChatbotScreen = () => {
     }
   };
 
+  sendMessageRef.current = handleSend;
+
   useEffect(() => {
     if (voiceStatus !== "recording" || !recorderState.isRecording) {
       silenceStartedAtRef.current = null;
@@ -705,6 +957,13 @@ const ChatbotScreen = () => {
   useEffect(() => {
     return () => {
       clearVoiceTimers();
+      if (voiceModeRef.current === "speech") {
+        try {
+          ExpoSpeechRecognitionModule?.abort?.();
+        } catch (_error) {
+          // Ignore cleanup failures during screen unmount.
+        }
+      }
       if (audioRecorder.isRecording) {
         audioRecorder.stop().catch(() => {});
       }

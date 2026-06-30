@@ -60,20 +60,29 @@ EXPO_PUBLIC_DISEASE_API_URL=http://YOUR_COMPUTER_IP:8001
 3. Start the app
 
 ```bash
-npx expo start
+npm run start:lan
 ```
 
-For physical phone testing, use your computer's Wi-Fi IP in `.env`, run both APIs with `--host 0.0.0.0`, and allow Windows Firewall inbound access for ports `8000` and `8001`.
+For physical phone testing:
+
+- Use `npm run start:lan`, then scan the LAN QR code in Expo Go.
+- Do not start Expo with `--localhost` on a physical phone. The phone will try to download the app from itself and can show `java.io.IOException: Failed to download remote update`.
+- Keep your phone and computer on the same Wi-Fi network.
+- Use your computer's Wi-Fi IP in `.env`, run both APIs with `--host 0.0.0.0`, and allow Windows Firewall inbound access for ports `8000`, `8001`, and Expo's Metro port.
+- If LAN is blocked by your network, use `npm run start:tunnel` instead.
 
 After changing `.env`, restart Expo with cache clear:
 
 ```bash
-npm run start -- --clear
+npm run start:lan
 ```
 
 ## Scripts
 
-- `npm start` - start Expo
+- `npm start` - start Expo on LAN for Expo Go
+- `npm run start:lan` - start Expo on LAN and clear cache
+- `npm run start:tunnel` - start Expo through a tunnel if LAN is blocked
+- `npm run start:local` - start Expo for local-only testing
 - `npm run android` - start on Android
 - `npm run ios` - start on iOS
 - `npm run web` - start web target

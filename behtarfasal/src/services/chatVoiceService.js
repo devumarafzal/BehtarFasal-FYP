@@ -1,9 +1,11 @@
 import { getApiBaseUrl, getNetworkErrorMessage } from "./apiConfig";
 
 const API_URL = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
+const VOICE_ERROR_FALLBACK =
+  "Voice service abhi available nahi hai. Please sawal type kar dein ya thori dair baad try karein.";
 
 const getAudioFileMeta = (uri) => {
-  const lowerUri = String(uri || "").toLowerCase();
+  const lowerUri = String(uri || "").split("?")[0].toLowerCase();
 
   if (lowerUri.endsWith(".3gp")) {
     return { name: "voice-message.3gp", type: "audio/3gpp" };
@@ -17,7 +19,42 @@ const getAudioFileMeta = (uri) => {
     return { name: "voice-message.wav", type: "audio/wav" };
   }
 
-  return { name: "voice-message.m4a", type: "audio/aac" };
+  if (lowerUri.endsWith(".aac")) {
+    return { name: "voice-message.aac", type: "audio/aac" };
+  }
+
+  if (lowerUri.endsWith(".mp3") || lowerUri.endsWith(".mpeg")) {
+    return { name: "voice-message.mp3", type: "audio/mpeg" };
+  }
+
+  if (lowerUri.endsWith(".ogg")) {
+    return { name: "voice-message.ogg", type: "audio/ogg" };
+  }
+
+  return { name: "voice-message.m4a", type: "audio/mp4" };
+};
+
+const normalizeVoiceErrorMessage = (value) => {
+  const detail = String(value || "")
+    .replace(/^Voice transcription service error:\s*/i, "")
+    .trim();
+
+  if (!detail) {
+    return "Voice samajh nahi aa saki.";
+  }
+
+  const lowerDetail = detail.toLowerCase();
+  const containsProviderError =
+    lowerDetail.includes("httperror") ||
+    lowerDetail.includes("generativelanguage") ||
+    lowerDetail.includes("googleapis") ||
+    lowerDetail.includes("google.rpc") ||
+    lowerDetail.includes("api_key") ||
+    lowerDetail.includes("api key") ||
+    lowerDetail.includes("gemini") ||
+    lowerDetail.includes("redacted");
+
+  return containsProviderError ? VOICE_ERROR_FALLBACK : detail;
 };
 
 export const transcribeVoiceMessage = async (uri) => {
@@ -53,7 +90,8 @@ export const transcribeVoiceMessage = async (uri) => {
   }
 
   if (!response.ok) {
-    throw new Error(data?.detail || data?.message || "Voice samajh nahi aa saki.");
+    const detail = normalizeVoiceErrorMessage(data?.detail || data?.message);
+    throw new Error(detail || "Voice samajh nahi aa saki.");
   }
 
   const text = String(data?.text || "").trim();

@@ -24,7 +24,7 @@ BehtarFasal is an AI-powered farming assistant for Pakistani farmers. This repo 
 - cd behtarfasal
 - npm install
 - Create .env based on behtarfasal/README.md
-- npm start
+- npm run start:lan
 
 2) Main API
 - cd behtarfasal-api
@@ -55,8 +55,10 @@ BehtarFasal is an AI-powered farming assistant for Pakistani farmers. This repo 
 | EXPO_PUBLIC_FIREBASE_APP_ID | Yes | Firebase app ID | your_app_id |
 | EXPO_PUBLIC_WEATHER_API_KEY | Yes | OpenWeatherMap API key | your_openweathermap_key |
 | EXPO_PUBLIC_GEMINI_API_KEY | Yes | Google Gemini API key | your_gemini_api_key |
-| EXPO_PUBLIC_API_URL | Yes | Base URL for main API | http://localhost:8000 |
-| EXPO_PUBLIC_DISEASE_API_URL | Yes | Base URL for disease API | http://localhost:8001 |
+| EXPO_PUBLIC_API_URL | Yes | Base URL for main API | http://YOUR_COMPUTER_WIFI_IP:8000 |
+| EXPO_PUBLIC_DISEASE_API_URL | Yes | Base URL for disease API | http://YOUR_COMPUTER_WIFI_IP:8001 |
+
+Use `localhost` only for web/local-only testing. On a physical phone, `localhost` points to the phone itself, so use your computer's Wi-Fi IP and start Expo with `npm run start:lan`. If Expo Go shows `java.io.IOException: Failed to download remote update`, close the old Expo session and restart with LAN or `npm run start:tunnel`.
 
 ### Main API (behtarfasal-api)
 

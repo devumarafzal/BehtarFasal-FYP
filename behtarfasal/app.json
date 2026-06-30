@@ -46,6 +46,18 @@
         {
           "microphonePermission": "Allow BehtarFasal to record voice questions for the chatbot."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow BehtarFasal to listen to voice questions for the chatbot.",
+          "speechRecognitionPermission": "Allow BehtarFasal to convert voice questions into text.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.tts",
+            "com.google.android.as"
+          ]
+        }
       ]
     ],
     "experiments": {
