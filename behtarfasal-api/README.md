@@ -10,7 +10,7 @@ FastAPI backend for BehtarFasal's main AI services: crop recommendation, fertili
 - Pydantic v2
 - numpy
 - python-dotenv
-- google-generativeai
+- Gemini REST API
 
 ## Project Layout
 

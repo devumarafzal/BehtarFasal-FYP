@@ -4,7 +4,6 @@ import base64
 import json
 import logging
 import re
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -71,11 +70,6 @@ def _is_invalid_api_key_error(value: object, status_code: int | None = None) -> 
     )
 
 try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None
-
-try:
     from dotenv import dotenv_values, load_dotenv
 except ImportError:
     dotenv_values = None
@@ -140,10 +134,8 @@ If a few words are unclear, keep the clear words and approximate the unclear wor
 Return an empty string only when there is truly no human speech in the audio.
 """.strip()
 
-if GEMINI_API_KEY and genai:
-    genai.configure(api_key=GEMINI_API_KEY)
-elif GEMINI_API_KEY and not genai:
-    logger.info("google-generativeai is not installed; chatbot will use Gemini REST API.")
+if GEMINI_API_KEY:
+    logger.info("Gemini API key is configured; chatbot will use Gemini REST API.")
 else:
     logger.warning("Gemini API key is not set; chatbot will use local fallback replies.")
 
@@ -259,7 +251,7 @@ def get_gemini_status() -> dict:
         "gemini_key_configured": bool(GEMINI_API_KEY),
         "gemini_model": GEMINI_MODEL,
         "candidate_models": _candidate_models(),
-        "provider": "google-generativeai" if genai else "rest",
+        "provider": "rest",
     }
 
 
@@ -329,66 +321,7 @@ def _send_gemini_audio_rest(audio_bytes: bytes, mime_type: str, model_name: str)
 
 
 def _upload_and_transcribe_audio(audio_bytes: bytes, mime_type: str, model_name: str) -> str:
-    if not genai:
-        return _send_gemini_audio_rest(audio_bytes, mime_type, model_name)
-
-    import tempfile
-
-    suffix = {
-        "audio/3gpp": ".3gp",
-        "audio/aac": ".m4a",
-        "audio/mp4": ".m4a",
-        "audio/m4a": ".m4a",
-        "audio/x-m4a": ".m4a",
-        "audio/mpeg": ".mp3",
-        "audio/ogg": ".ogg",
-        "audio/webm": ".webm",
-        "audio/wav": ".wav",
-        "video/mp4": ".m4a",
-    }.get(mime_type, ".m4a")
-
-    temp_path = None
-    uploaded_file = None
-
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            temp_file.write(audio_bytes)
-            temp_path = temp_file.name
-
-        uploaded_file = genai.upload_file(path=temp_path, mime_type=mime_type)
-
-        for _ in range(20):
-            state_name = getattr(getattr(uploaded_file, "state", None), "name", "")
-
-            if state_name == "ACTIVE":
-                break
-
-            if state_name == "FAILED":
-                raise RuntimeError("Gemini audio file processing failed")
-
-            time.sleep(0.5)
-            uploaded_file = genai.get_file(uploaded_file.name)
-
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            generation_config={
-                "temperature": 0,
-                "max_output_tokens": 180,
-            },
-        )
-        response = model.generate_content([uploaded_file, TRANSCRIPTION_PROMPT])
-        return (response.text or "").strip()
-    finally:
-        if uploaded_file:
-            try:
-                genai.delete_file(uploaded_file.name)
-            except Exception:
-                logger.debug("Could not delete Gemini uploaded transcription file", exc_info=True)
-        if temp_path:
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                logger.debug("Could not delete temporary transcription file", exc_info=True)
+    return _send_gemini_audio_rest(audio_bytes, mime_type, model_name)
 
 async def generate_gemini_response(prompt: str, history: list = None, system_prompt: str = SYSTEM_PROMPT) -> str:
     """Generate a real-time Gemini response."""
@@ -402,28 +335,13 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
 
         for model_name in _candidate_models():
             try:
-                if not genai:
-                    return await asyncio.to_thread(
-                        _send_gemini_rest,
-                        prompt,
-                        formatted_history,
-                        system_prompt,
-                        model_name,
-                    )
-
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=system_prompt,
-                    generation_config={
-                        "temperature": 0.55,
-                        "top_p": 0.9,
-                        "max_output_tokens": 650,
-                    },
+                return await asyncio.to_thread(
+                    _send_gemini_rest,
+                    prompt,
+                    formatted_history,
+                    system_prompt,
+                    model_name,
                 )
-
-                chat = model.start_chat(history=formatted_history)
-                response = await asyncio.to_thread(chat.send_message, prompt)
-                return response.text
             except urllib.error.HTTPError as e:
                 detail = e.read().decode("utf-8", errors="ignore")
                 if _is_invalid_api_key_error(detail, e.code):
