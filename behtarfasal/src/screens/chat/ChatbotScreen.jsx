@@ -16,7 +16,10 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { theme } from "../../constants/theme";
 import { WeatherContext } from "../../contexts/WeatherContext";
 import { auth } from "../../firebase/config";
@@ -26,9 +29,11 @@ import {
   getChatSessions,
   saveChatSession,
 } from "../../firebase/firestore";
-import { getApiBaseUrl, getNetworkErrorMessage } from "../../services/apiConfig";
+import {
+  getApiBaseUrl,
+  getNetworkErrorMessage,
+} from "../../services/apiConfig";
 
-const API_BASE_URL = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
 const CHAT_SESSION_STORAGE_PREFIX = "@behtarfasal/chatSessions/";
 
 const WELCOME_MESSAGE = {
@@ -83,7 +88,7 @@ const formatSessionDate = (timestamp) => {
         ? timestamp
         : typeof timestamp === "string" || typeof timestamp === "number"
           ? new Date(timestamp)
-        : null;
+          : null;
 
   if (!date || Number.isNaN(date.getTime())) {
     return "";
@@ -110,7 +115,9 @@ const normalizeLocalSession = (session) => ({
 });
 
 const loadLocalChatSessions = async (userId) => {
-  const rawSessions = await AsyncStorage.getItem(getLocalChatSessionKey(userId));
+  const rawSessions = await AsyncStorage.getItem(
+    getLocalChatSessionKey(userId),
+  );
   let parsedSessions = [];
 
   try {
@@ -126,7 +133,7 @@ const loadLocalChatSessions = async (userId) => {
   return parsedSessions
     .map(normalizeLocalSession)
     .sort(
-      (first, second) => new Date(second.updatedAt) - new Date(first.updatedAt)
+      (first, second) => new Date(second.updatedAt) - new Date(first.updatedAt),
     );
 };
 
@@ -142,7 +149,12 @@ const toLocalDateKey = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const buildWeatherPayload = ({ weather, forecast, rawForecast, currentCity }) => {
+const buildWeatherPayload = ({
+  weather,
+  forecast,
+  rawForecast,
+  currentCity,
+}) => {
   if (!weather && (!Array.isArray(rawForecast) || rawForecast.length === 0)) {
     return null;
   }
@@ -216,7 +228,7 @@ const ChatbotScreen = () => {
   const migrateLocalChatSessionsToCloud = useCallback(async (userId) => {
     const localSessions = await loadLocalChatSessions(userId);
     const sessionsToMigrate = localSessions.filter((session) =>
-      session.messages.some((item) => item.role === "user")
+      session.messages.some((item) => item.role === "user"),
     );
 
     if (sessionsToMigrate.length === 0) {
@@ -235,9 +247,9 @@ const ChatbotScreen = () => {
             messages: session.messages,
             createdAt: session.createdAt,
           },
-          session.id
-        )
-      )
+          session.id,
+        ),
+      ),
     );
     await removeLocalChatSessions(userId);
     return true;
@@ -267,13 +279,13 @@ const ChatbotScreen = () => {
         setSessions([]);
         setError(
           err.message ||
-            "Chat sessions database se load nahi ho sakin. Please try again."
+            "Chat sessions database se load nahi ho sakin. Please try again.",
         );
       } finally {
         setSessionsLoading(false);
       }
     },
-    [migrateLocalChatSessionsToCloud]
+    [migrateLocalChatSessionsToCloud],
   );
 
   const persistChatSession = useCallback(
@@ -291,7 +303,7 @@ const ChatbotScreen = () => {
       const savedSessionId = await saveChatSession(
         userId,
         sessionPayload,
-        sessionId
+        sessionId,
       );
       const savedSessions = await getChatSessions(userId);
 
@@ -300,7 +312,7 @@ const ChatbotScreen = () => {
 
       return savedSessionId;
     },
-    [activeSessionId]
+    [activeSessionId],
   );
 
   const handleNewChat = () => {
@@ -332,7 +344,7 @@ const ChatbotScreen = () => {
 
       setActiveSessionId(session.id);
       setChatHistory(
-        normalizeChatMessages(selectedSession?.messages || session.messages)
+        normalizeChatMessages(selectedSession?.messages || session.messages),
       );
     } catch (_err) {
       setError("Chat session open nahi ho saki. Please try again.");
@@ -410,12 +422,13 @@ const ChatbotScreen = () => {
               index === 0 &&
               item.role === WELCOME_MESSAGE.role &&
               item.content === WELCOME_MESSAGE.content
-            )
+            ),
         )
         .slice(-8)
         .map(({ role, content }) => ({ role, content }));
 
-      const url = `${API_BASE_URL}/chat/`;
+      const apiBaseUrl = getApiBaseUrl(process.env.EXPO_PUBLIC_API_URL, 8000);
+      const url = `${apiBaseUrl}/chat/`;
       let response;
 
       try {
@@ -432,7 +445,7 @@ const ChatbotScreen = () => {
           }),
         });
       } catch (_networkError) {
-        throw new Error(getNetworkErrorMessage("Chatbot", API_BASE_URL));
+        throw new Error(getNetworkErrorMessage("Chatbot", apiBaseUrl));
       }
 
       if (!response.ok) {
@@ -445,8 +458,7 @@ const ChatbotScreen = () => {
         {
           role: "ai",
           content:
-            data.reply ||
-            "Maaf kijiye, mujhe is sawal ka jawab nahi mil saka.",
+            data.reply || "Maaf kijiye, mujhe is sawal ka jawab nahi mil saka.",
         },
       ];
 
@@ -454,7 +466,7 @@ const ChatbotScreen = () => {
     } catch (err) {
       setError(
         err.message ||
-          "Maaf kijiye, abhi response nahi mil saka. Please try again."
+          "Maaf kijiye, abhi response nahi mil saka. Please try again.",
       );
     } finally {
       try {
@@ -464,7 +476,7 @@ const ChatbotScreen = () => {
           (prev) =>
             prev ||
             saveError.message ||
-            "Chat session save nahi ho saki. Please try again."
+            "Chat session save nahi ho saki. Please try again.",
         );
       } finally {
         setLoading(false);
@@ -492,16 +504,19 @@ const ChatbotScreen = () => {
       return undefined;
     }
 
-    const showSubscription = Keyboard.addListener("keyboardDidShow", (event) => {
-      const keyboardHeight = event.endCoordinates?.height || 0;
-      const currentWindowHeight = Dimensions.get("window").height;
-      const resizedBy = Math.max(
-        0,
-        initialWindowHeightRef.current - currentWindowHeight
-      );
+    const showSubscription = Keyboard.addListener(
+      "keyboardDidShow",
+      (event) => {
+        const keyboardHeight = event.endCoordinates?.height || 0;
+        const currentWindowHeight = Dimensions.get("window").height;
+        const resizedBy = Math.max(
+          0,
+          initialWindowHeightRef.current - currentWindowHeight,
+        );
 
-      setKeyboardOffset(Math.max(0, keyboardHeight - resizedBy));
-    });
+        setKeyboardOffset(Math.max(0, keyboardHeight - resizedBy));
+      },
+    );
 
     const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
       setKeyboardOffset(0);
@@ -547,11 +562,7 @@ const ChatbotScreen = () => {
                   disabled={loading}
                   accessibilityLabel="Start new chat"
                 >
-                  <Ionicons
-                    name="add"
-                    size={18}
-                    color={theme.colors.surface}
-                  />
+                  <Ionicons name="add" size={18} color={theme.colors.surface} />
                   <Text style={styles.newChatButtonText}>New</Text>
                 </Pressable>
 

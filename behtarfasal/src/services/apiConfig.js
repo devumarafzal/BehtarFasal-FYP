@@ -1,7 +1,9 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import { Platform } from "react-native";
+import Constants from "expo-constants";
 
-const trimTrailingSlash = (url) => url.replace(/\/+$/, '');
+const DEFAULT_API_BASE_URL =
+  "https://behtarfasal-fyp-production.up.railway.app";
+const trimTrailingSlash = (url) => url.replace(/\/+$/, "");
 
 const getExpoHostIp = () => {
   const hostUri =
@@ -9,12 +11,13 @@ const getExpoHostIp = () => {
     Constants.manifest2?.extra?.expoClient?.hostUri ||
     Constants.manifest?.debuggerHost;
 
-  return hostUri?.split(':')[0] || '';
+  return hostUri?.split(":")[0] || "";
 };
 
 export const getApiBaseUrl = (envUrl, port = 8000) => {
-  if (envUrl) {
-    return trimTrailingSlash(envUrl);
+  const configuredUrl = String(envUrl || "").trim();
+  if (configuredUrl) {
+    return trimTrailingSlash(configuredUrl);
   }
 
   const expoHostIp = getExpoHostIp();
@@ -22,11 +25,11 @@ export const getApiBaseUrl = (envUrl, port = 8000) => {
     return `http://${expoHostIp}:${port}`;
   }
 
-  if (Platform.OS === 'android') {
+  if (Platform.OS === "android") {
     return `http://10.0.2.2:${port}`;
   }
 
-  return `http://localhost:${port}`;
+  return DEFAULT_API_BASE_URL;
 };
 
 export const getNetworkErrorMessage = (serviceName, baseUrl) =>
