@@ -2,8 +2,11 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 
 const DEFAULT_API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
   "https://behtarfasal-fyp-production.up.railway.app";
 const trimTrailingSlash = (url) => url.replace(/\/+$/, "");
+const isAndroidEmulator =
+  Platform.OS === "android" && !(Constants.isDevice ?? false);
 
 const getExpoHostIp = () => {
   const hostUri =
@@ -17,7 +20,16 @@ const getExpoHostIp = () => {
 export const getApiBaseUrl = (envUrl, port = 8000) => {
   const configuredUrl = String(envUrl || "").trim();
   if (configuredUrl) {
-    return trimTrailingSlash(configuredUrl);
+    try {
+      const parsedUrl = new URL(configuredUrl);
+      if (isAndroidEmulator) {
+        parsedUrl.hostname = "10.0.2.2";
+        return trimTrailingSlash(parsedUrl.toString());
+      }
+      return trimTrailingSlash(parsedUrl.toString());
+    } catch (_error) {
+      return trimTrailingSlash(configuredUrl);
+    }
   }
 
   const expoHostIp = getExpoHostIp();
@@ -29,7 +41,7 @@ export const getApiBaseUrl = (envUrl, port = 8000) => {
     return `http://10.0.2.2:${port}`;
   }
 
-  return DEFAULT_API_BASE_URL;
+  return trimTrailingSlash(DEFAULT_API_BASE_URL);
 };
 
 export const getNetworkErrorMessage = (serviceName, baseUrl) =>
