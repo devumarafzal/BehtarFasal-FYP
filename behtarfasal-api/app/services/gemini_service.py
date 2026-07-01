@@ -73,7 +73,7 @@ def _read_env_file(path: Path) -> Dict[str, str]:
     return values
 
 
-def _load_gemini_api_key() -> str:
+def _load_groq_api_key() -> str:
     """Load a server key, with a local-dev fallback to the Expo env file."""
     api_root = Path(__file__).resolve().parents[2]
     workspace_root = api_root.parent
@@ -81,32 +81,29 @@ def _load_gemini_api_key() -> str:
     if load_dotenv:
         load_dotenv(api_root / ".env", override=False)
 
-    key = os.getenv("GEMINI_API_KEY") or os.getenv("EXPO_PUBLIC_GEMINI_API_KEY")
+    key = os.getenv("GROQ_API_KEY") or os.getenv("EXPO_PUBLIC_GROQ_API_KEY")
     if key:
         return key
 
     frontend_env = workspace_root / "behtarfasal" / ".env"
     frontend_values = _read_env_file(frontend_env)
-    return frontend_values.get("GEMINI_API_KEY") or frontend_values.get(
-        "EXPO_PUBLIC_GEMINI_API_KEY",
+    return frontend_values.get("GROQ_API_KEY") or frontend_values.get(
+        "EXPO_PUBLIC_GROQ_API_KEY",
         "",
     )
 
 
-GEMINI_API_KEY = _load_gemini_api_key()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_FALLBACK_MODELS = [
-    "gemini-3.1-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-flash-lite-latest",
-    "gemini-2.0-flash-lite",
+GROQ_API_KEY = _load_groq_api_key()
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_FALLBACK_MODELS = [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
 ]
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-if GEMINI_API_KEY:
-    logger.info("Gemini API key is configured; chatbot will use Gemini REST API.")
+if GROQ_API_KEY:
+    logger.info("Groq API key is configured; chatbot will use the Groq API.")
 else:
-    logger.warning("Gemini API key is not set; chatbot will use local fallback replies.")
+    logger.warning("Groq API key is not set; chatbot will use local fallback replies.")
 
 SYSTEM_PROMPT = """
 You are AgriAssist, an expert agricultural AI assistant for Pakistani farmers.
@@ -200,10 +197,10 @@ def _extract_rest_text(payload: dict) -> str:
 def _candidate_models() -> List[str]:
     configured = [
         item.strip()
-        for item in os.getenv("GEMINI_FALLBACK_MODELS", "").split(",")
+        for item in os.getenv("GROQ_FALLBACK_MODELS", os.getenv("GEMINI_FALLBACK_MODELS", "")).split(",")
         if item.strip()
     ]
-    candidates = [GEMINI_MODEL, *configured, *GEMINI_FALLBACK_MODELS]
+    candidates = [GROQ_MODEL, *configured, *GROQ_FALLBACK_MODELS]
     normalized: List[str] = []
 
     for model in candidates:
@@ -215,45 +212,69 @@ def _candidate_models() -> List[str]:
 
 
 def get_gemini_status() -> dict:
-    """Return non-secret Gemini runtime status for debugging deployment config."""
+    """Return non-secret Groq runtime status for debugging deployment config."""
     return {
-        "gemini_key_configured": bool(GEMINI_API_KEY),
-        "gemini_model": GEMINI_MODEL,
+        "groq_key_configured": bool(GROQ_API_KEY),
+        "groq_model": GROQ_MODEL,
         "candidate_models": _candidate_models(),
-        "provider": "rest",
+        "provider": "groq",
     }
 
 
-def _send_gemini_rest(prompt: str, history: list, system_prompt: str, model_name: str) -> str:
-    model = urllib.parse.quote(model_name, safe="")
-    url = f"{GEMINI_API_URL.format(model=model)}?key={urllib.parse.quote(GEMINI_API_KEY)}"
+def _to_groq_messages(history: List[dict], prompt: str, system_prompt: str) -> List[dict]:
+    messages = [{"role": "system", "content": system_prompt}]
+
+    for item in history:
+        role = _message_value(item, "role").strip().lower()
+        parts = item.get("parts", []) if isinstance(item, dict) else getattr(item, "parts", [])
+        content = "\n".join(str(part) for part in parts if part).strip()
+
+        if not content:
+            continue
+
+        if role == "user":
+            messages.append({"role": "user", "content": content})
+        elif role in {"ai", "assistant", "model"}:
+            messages.append({"role": "assistant", "content": content})
+
+    messages.append({"role": "user", "content": prompt})
+    return messages
+
+
+def _send_groq_rest(prompt: str, history: list, system_prompt: str, model_name: str) -> str:
+    url = "https://api.groq.com/openai/v1/chat/completions"
     body = {
-        "systemInstruction": {
-            "parts": [{"text": system_prompt}],
-        },
-        "contents": _to_rest_contents(history, prompt),
-        "generationConfig": {
-            "temperature": 0.55,
-            "topP": 0.9,
-            "maxOutputTokens": 650,
-        },
+        "model": model_name,
+        "messages": _to_groq_messages(history, prompt, system_prompt),
+        "temperature": 0.55,
+        "top_p": 0.9,
+        "max_tokens": 650,
     }
 
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
 
     with urllib.request.urlopen(request, timeout=35) as response:
         response_payload = json.loads(response.read().decode("utf-8"))
 
-    return _extract_rest_text(response_payload)
+    choices = response_payload.get("choices") or []
+    if not choices:
+        return ""
+
+    message = choices[0].get("message") or {}
+    return str(message.get("content", "") or "").strip()
+
 
 async def generate_gemini_response(prompt: str, history: list = None, system_prompt: str = SYSTEM_PROMPT) -> str:
-    """Generate a real-time Gemini response."""
-    if not GEMINI_API_KEY:
+    """Generate a real-time Groq response."""
+    if not GROQ_API_KEY:
         return ""
 
     try:
@@ -264,7 +285,7 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
         for model_name in _candidate_models():
             try:
                 return await asyncio.to_thread(
-                    _send_gemini_rest,
+                    _send_groq_rest,
                     prompt,
                     formatted_history,
                     system_prompt,
@@ -274,40 +295,40 @@ async def generate_gemini_response(prompt: str, history: list = None, system_pro
                 detail = e.read().decode("utf-8", errors="ignore")
                 if _is_invalid_api_key_error(detail, e.code):
                     logger.error(
-                        "Gemini API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                        "Groq API key is invalid. Update GROQ_API_KEY on the server and restart it."
                     )
                     return ""
                 if _is_quota_error(detail, e.code):
                     quota_failures += 1
-                logger.warning("Gemini model %s failed: %s %s", model_name, e.code, _sanitize_log_text(detail))
+                logger.warning("Groq model %s failed: %s %s", model_name, e.code, _sanitize_log_text(detail))
             except Exception as e:
                 if _is_invalid_api_key_error(e):
                     logger.error(
-                        "Gemini API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                        "Groq API key is invalid. Update GROQ_API_KEY on the server and restart it."
                     )
                     return ""
                 if _is_quota_error(e):
                     quota_failures += 1
-                logger.warning("Gemini model %s failed: %s", model_name, _sanitize_log_text(e))
+                logger.warning("Groq model %s failed: %s", model_name, _sanitize_log_text(e))
 
         if quota_failures:
-            logger.warning("Gemini quota/resource exhausted for configured backend key.")
+            logger.warning("Groq quota/resource exhausted for configured backend key.")
 
         return ""
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="ignore")
         if _is_invalid_api_key_error(detail, e.code):
             logger.error(
-                "Gemini REST API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                "Groq REST API key is invalid. Update GROQ_API_KEY on the server and restart it."
             )
             return ""
-        logger.error("Gemini REST API error: %s %s", e.code, _sanitize_log_text(detail))
+        logger.error("Groq REST API error: %s %s", e.code, _sanitize_log_text(detail))
         return ""
     except Exception as e:
         if _is_invalid_api_key_error(e):
             logger.error(
-                "Gemini API key is invalid. Update GEMINI_API_KEY on the server and restart it."
+                "Groq API key is invalid. Update GROQ_API_KEY on the server and restart it."
             )
             return ""
-        logger.error("Gemini API error: %s", _sanitize_log_text(e))
+        logger.error("Groq API error: %s", _sanitize_log_text(e))
         return ""
