@@ -478,7 +478,12 @@ async def process_chat_message(request: ChatRequest) -> ChatResponse:
         user_context=user_context,
         data_note=data_notes.get(intent, data_notes["GENERAL"]),
     )
-    reply = await generate_gemini_response(prompt, request.history)
+
+    try:
+        reply = await generate_gemini_response(prompt, request.history)
+    except Exception as provider_error:
+        logger.warning("Chat provider failed, using fallback reply: %s", provider_error)
+        reply = ""
 
     if not reply:
         reply = build_fallback_reply(intent, user_message, user_context)

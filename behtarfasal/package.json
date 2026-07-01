@@ -3,8 +3,8 @@
   "main": "node_modules/expo/AppEntry.js",
   "version": "1.0.0",
   "scripts": {
-    "start": "set REACT_NATIVE_PACKAGER_HOSTNAME=10.175.80.170&& expo start --host lan --port 8081 --clear",
-    "start:lan": "set REACT_NATIVE_PACKAGER_HOSTNAME=10.175.80.170&& expo start --host lan --port 8081 --clear",
+    "start": "set REACT_NATIVE_PACKAGER_HOSTNAME=192.168.25.1&& expo start --host lan --port 8081 --clear",
+    "start:lan": "set REACT_NATIVE_PACKAGER_HOSTNAME=192.168.25.1&& expo start --host lan --port 8081 --clear",
     "start:local": "expo start --host localhost --port 8081 --clear",
     "start:usb": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000 && adb reverse tcp:8001 tcp:8001 && set EXPO_PUBLIC_API_URL=http://127.0.0.1:8000&& set EXPO_PUBLIC_DISEASE_API_URL=http://127.0.0.1:8001&& expo start --host localhost --android --port 8081 --clear",
     "android": "expo run:android",
