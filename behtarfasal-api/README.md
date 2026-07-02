@@ -57,7 +57,7 @@ python -m pip install -r requirements.txt --index-url https://pypi.org/simple
 # GEMINI_API_KEY=your_google_gemini_key
 # GEMINI_MODEL=gemini-2.5-flash
 
-uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 If you use Python 3.13, avoid pinning very old pydantic versions because they may try to build `pydantic-core` from source and require MSVC build tools.
@@ -183,6 +183,6 @@ If that still fails on your machine, create the venv with Python 3.11 (`py -3.11
 
 1. Place crop, fertilizer, and yield model files in app/ml/.
 2. Run `pip install -r requirements.txt`.
-3. Run `uvicorn app.main:app --host 127.0.0.1 --reload --port 8010`.
-4. Check `http://127.0.0.1:8010/health` and confirm model_loaded is true.
-5. Test prediction at `http://127.0.0.1:8010/docs`.
+3. Run `uvicorn app.main:app --host 0.0.0.0 --reload --port 8000`.
+4. Check `http://127.0.0.1:8000/health` and confirm model_loaded is true.
+5. Test prediction at `http://127.0.0.1:8000/docs`.

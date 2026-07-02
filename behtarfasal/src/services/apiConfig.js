@@ -2,11 +2,39 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 
 const DEFAULT_API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ||
-  "https://behtarfasal-fyp-production.up.railway.app";
+  process.env.EXPO_PUBLIC_API_URL || "http://127.0.0.1:8000";
 const trimTrailingSlash = (url) => url.replace(/\/+$/, "");
 const isAndroidEmulator =
   Platform.OS === "android" && !(Constants.isDevice ?? false);
+
+const normalizeApiUrl = (url) => {
+  const trimmedUrl = trimTrailingSlash(String(url || "").trim());
+  if (!trimmedUrl) {
+    return trimmedUrl;
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedUrl);
+    const isLocalNetworkHost =
+      parsedUrl.hostname === "localhost" ||
+      parsedUrl.hostname === "127.0.0.1" ||
+      parsedUrl.hostname.startsWith("192.168.") ||
+      parsedUrl.hostname.startsWith("10.") ||
+      parsedUrl.hostname.startsWith("172.");
+
+    if (isLocalNetworkHost && parsedUrl.protocol === "https:") {
+      parsedUrl.protocol = "http:";
+    }
+
+    if ((parsedUrl.port === "8010" || parsedUrl.port === "8001") && isLocalNetworkHost) {
+      parsedUrl.port = "8000";
+    }
+
+    return trimTrailingSlash(parsedUrl.toString());
+  } catch (_error) {
+    return trimmedUrl;
+  }
+};
 
 const getExpoHostIp = () => {
   const hostUri =
@@ -17,19 +45,35 @@ const getExpoHostIp = () => {
   return hostUri?.split(":")[0] || "";
 };
 
+const isLocalDevUrl = (url) => {
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      parsedUrl.hostname === "localhost" ||
+      parsedUrl.hostname === "127.0.0.1" ||
+      parsedUrl.hostname.startsWith("192.168.") ||
+      parsedUrl.hostname.startsWith("10.") ||
+      parsedUrl.hostname.startsWith("172.")
+    );
+  } catch (_error) {
+    return false;
+  }
+};
+
 export const getApiBaseUrl = (envUrl, port = 8000) => {
   const configuredUrl = String(envUrl || "").trim();
   if (configuredUrl) {
-    try {
-      const parsedUrl = new URL(configuredUrl);
-      if (isAndroidEmulator) {
+    if (isAndroidEmulator && isLocalDevUrl(configuredUrl)) {
+      try {
+        const parsedUrl = new URL(configuredUrl);
         parsedUrl.hostname = "10.0.2.2";
-        return trimTrailingSlash(parsedUrl.toString());
+        return normalizeApiUrl(parsedUrl.toString());
+      } catch (_error) {
+        return normalizeApiUrl(configuredUrl);
       }
-      return trimTrailingSlash(parsedUrl.toString());
-    } catch (_error) {
-      return trimTrailingSlash(configuredUrl);
     }
+
+    return normalizeApiUrl(configuredUrl);
   }
 
   const expoHostIp = getExpoHostIp();
